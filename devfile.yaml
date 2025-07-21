@@ -1,7 +1,7 @@
 schemaVersion: 2.2.0
 metadata:
-  name: udi
-  displayName: Universal Developer Image
+  name: workspace-dev
+  displayName: Che Image and Workspace Development
   description: >-
     Universal Developer Image provides various programming languages tools and
     runtimes for instant coding
