@@ -1,0 +1,122 @@
+schemaVersion: 2.2.0
+metadata:
+  name: rust-development
+  displayName: Rust Development Environment
+  description: Prebuilt Rust + Nix dev container
+  icon: https://www.rust-lang.org/logos/rust-logo-512x512.png
+  tags:
+    - Rust
+    - Nix
+  projectType: rust
+  language: rust
+  version: 1.0.0
+
+projects:
+  - name: rustling
+    git:
+      remotes:
+        origin: https://github.com/Mbd06b/rustling.git
+
+components:
+  - name: rust-dev
+    container:
+      image: harbor.ethosengine.com/devspaces/rust-nix-dev:latest
+      memoryLimit: 8Gi
+      memoryRequest: 2Gi
+      cpuLimit: '4'
+      cpuRequest: '1'
+      mountSources: true
+      sourceMapping: /projects
+      env:
+        - name: RUST_BACKTRACE
+          value: '1'
+        - name: USER
+          value: user
+      endpoints:
+        - name: http-8080
+          targetPort: 8080
+          exposure: public
+          protocol: https
+        - name: debug-5005
+          targetPort: 5005
+          exposure: internal
+      volumeMounts:
+        - name: cargo-cache
+          path: /home/user/.cargo
+        - name: rustup-cache
+          path: /home/user/.rustup
+        - name: nix-store
+          path: /nix
+
+  - name: cargo-cache
+    volume:
+      size: 5Gi
+  - name: rustup-cache
+    volume:
+      size: 2Gi
+  - name: nix-store
+    volume:
+      size: 10Gi
+
+commands:
+  - id: rust-init-project
+    exec:
+      label: "Initialize Rust Project"
+      component: rust-dev
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: |
+        cargo init --name my-rust-project
+        echo "Rust project initialized!"
+
+  - id: cargo-build
+    exec:
+      label: "Build Rust Project"
+      component: rust-dev
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: cargo build
+      group:
+        kind: build
+        isDefault: true
+
+  - id: cargo-run
+    exec:
+      label: "Run Rust Project"
+      component: rust-dev
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: cargo run
+      group:
+        kind: run
+        isDefault: true
+
+  - id: cargo-test
+    exec:
+      label: "Test Rust Project"
+      component: rust-dev
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: cargo test
+      group:
+        kind: test
+        isDefault: true
+
+  - id: cargo-clippy
+    exec:
+      label: "Run Clippy Linter"
+      component: rust-dev
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: cargo clippy -- -D warnings
+
+  - id: cargo-fmt
+    exec:
+      label: "Format Code"
+      component: rust-dev
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: cargo fmt
+
+  - id: install-rust-book-examples
+    exec:
+      label: "Download Rust Book Examples"
+      component: rust-dev
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: |
+        git clone https://github.com/rust-lang/book.git rust-book-examples
+        echo "Examples downloaded to rust-book-examples/"
