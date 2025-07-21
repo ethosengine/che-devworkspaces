@@ -21,6 +21,11 @@ metadata:
   projectType: universal
   language: Polyglot
   version: 1.0.0
+  projects:
+  - name: che-devworkspaces
+    git:
+      remotes:
+        origin: https://github.com/ethosengine/che-devworkspaces.git
 components:
   - name: tools
     container:
