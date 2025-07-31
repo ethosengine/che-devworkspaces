@@ -11,20 +11,20 @@ metadata:
   language: rust
   version: 1.0.0
 
-projects:
-  - name: rustling
-    git:
-      remotes:
-        origin: https://github.com/Mbd06b/rustling.git
+# projects:
+#   - name: example-project
+#     git:
+#       remotes:
+#         origin: https://github.com/your-org/your-repo.git
 
 components:
   - name: rust-dev
     container:
       image: harbor.ethosengine.com/devspaces/rust-nix-dev:latest
-      memoryLimit: 8Gi
-      memoryRequest: 2Gi
-      cpuLimit: '4'
-      cpuRequest: '1'
+      memoryLimit: 6Gi
+      memoryRequest: 1Gi
+      cpuLimit: '2'
+      cpuRequest: '500m'
       mountSources: true
       sourceMapping: /projects
       env:
@@ -32,6 +32,16 @@ components:
           value: '1'
         - name: USER
           value: user
+        - name: XDG_CACHE_HOME
+          value: /nix-xdg/cache
+        - name: XDG_DATA_HOME
+          value: /nix-xdg/data
+        - name: XDG_STATE_HOME
+          value: /nix-xdg/state
+        - name: XDG_CONFIG_HOME
+          value: /nix-xdg/config
+        - name: NPM_CONFIG_CACHE
+          value: /nix-xdg/cache/npm
       endpoints:
         - name: http-8080
           targetPort: 8080
@@ -41,22 +51,22 @@ components:
           targetPort: 5005
           exposure: internal
       volumeMounts:
+        - name: dev-storage
+          path: /nix
         - name: cargo-cache
           path: /home/user/.cargo
         - name: rustup-cache
           path: /home/user/.rustup
-        - name: nix-store
-          path: /nix
 
+  - name: dev-storage
+    volume:
+      size: 25Gi
   - name: cargo-cache
     volume:
-      size: 5Gi
+      size: 3Gi
   - name: rustup-cache
     volume:
       size: 2Gi
-  - name: nix-store
-    volume:
-      size: 10Gi
 
 commands:
   - id: rust-init-project
@@ -65,8 +75,12 @@ commands:
       component: rust-dev
       workingDir: ${PROJECT_SOURCE}
       commandLine: |
-        cargo init --name my-rust-project
-        echo "Rust project initialized!"
+        if [ ! -f Cargo.toml ]; then
+          cargo init .
+          echo "✅ Rust project initialized!"
+        else
+          echo "📦 Rust project already exists"
+        fi
 
   - id: cargo-build
     exec:
@@ -112,11 +126,15 @@ commands:
       workingDir: ${PROJECT_SOURCE}
       commandLine: cargo fmt
 
-  - id: install-rust-book-examples
+  - id: install-rust-analyzer
     exec:
-      label: "Download Rust Book Examples"
+      label: "Install Rust Analyzer (LSP)"
       component: rust-dev
       workingDir: ${PROJECT_SOURCE}
       commandLine: |
-        git clone https://github.com/rust-lang/book.git rust-book-examples
-        echo "Examples downloaded to rust-book-examples/"
+        if ! rustup component list --installed | grep -q rust-analyzer; then
+          rustup component add rust-analyzer
+          echo "✅ Rust Analyzer installed"
+        else
+          echo "📦 Rust Analyzer already installed"
+        fi

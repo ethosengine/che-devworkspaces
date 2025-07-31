@@ -29,18 +29,13 @@ metadata:
 components:
   - name: tools
     container:
-      image: quay.io/devfile/universal-developer-image:ubi8-latest
+      image: harbor.ethosengine.com/devspaces/udi-plus:ubi9-plus-latest
       memoryLimit: 6G
       memoryRequest: 512Mi
       cpuRequest: 1000m
       cpuLimit: 4000m
       mountSources: true
-attributes:
-  dw.metadata.annotations:
-    che.eclipse.org/devfile-source: |
-      url:
-        location: https://registry.devfile.io/devfiles/udi/1.0.0
-      factory:
-        params: >-
-          che-editor=che-incubator/che-code/latest&storageType=per-user&url=https://registry.devfile.io/devfiles/udi/1.0.0
-  controller.devfile.io/storage-type: per-user
+      env:
+        - name: CLAUDE_CONFIG_DIR
+          value: /tmp/claude-config
+
