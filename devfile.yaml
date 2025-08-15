@@ -17,7 +17,7 @@ metadata:
     - Go
     - Python
     - Pip
-    - ubi8
+    - ubi9
   projectType: universal
   language: Polyglot
   version: 1.0.0
