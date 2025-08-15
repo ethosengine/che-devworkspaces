@@ -19,7 +19,9 @@ RUN mkdir -p /nix /etc/nix && \
 RUN printf 'experimental-features = nix-command flakes\n\
 substituters = https://cache.nixos.org https://holochain-ci.cachix.org https://darksoil-studio.cachix.org\n\
 trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= holochain-ci.cachix.org-1:5IUSkZc0aoRS53rfkvH9Kid40NpyjwCMCzwRTXy+QN8= darksoil-studio.cachix.org-1:UEi+aujy44s41XL/pscLw37KEVpTEIn8N/kn7jO8rkc=\n\
-sandbox = false\n' \
+sandbox = false\n\
+system-features = recursive-nix\n\
+filter-syscalls = false\n' \
     > /etc/nix/nix.conf
 
 # Create XDG directories that will be volume-mounted
