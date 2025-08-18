@@ -6,9 +6,6 @@ FROM node:18-alpine
 
 # Install system dependencies
 RUN apk add --no-cache \
-    docker \
-    docker-cli \
-    docker-compose \
     kubectl \
     curl \
     wget \
@@ -21,7 +18,12 @@ RUN apk add --no-cache \
     openssh-client \
     openjdk17-jre \
     chromium \
-    chromium-chromedriver
+    chromium-chromedriver \
+    nss \
+    freetype \
+    harfbuzz \
+    ttf-freefont \
+    tzdata
 
 # Set Chrome environment for headless testing with sandbox disabled for root
 ENV CHROME_BIN=/usr/bin/chromium-browser \
@@ -40,6 +42,12 @@ ENV CHROME_BIN=/usr/bin/chromium-browser-wrapper \
 # Set JAVA_HOME for system JRE
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk
 
+# Install nerdctl for container operations
+RUN NERDCTL_VERSION=1.7.7 && \
+    curl -fsSL https://github.com/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/nerdctl-${NERDCTL_VERSION}-linux-amd64.tar.gz | \
+    tar -xz -C /usr/local/bin/ nerdctl && \
+    chmod +x /usr/local/bin/nerdctl
+
 # Install SonarQube Scanner and configure to use system JRE
 RUN curl -o sonar-scanner.zip -L https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.2.1.4610-linux-x64.zip && \
     unzip sonar-scanner.zip && \
@@ -49,9 +57,6 @@ RUN curl -o sonar-scanner.zip -L https://binaries.sonarsource.com/Distribution/s
     rm -f /opt/sonar-scanner/jre/bin/java && \
     ln -s /usr/bin/java /opt/sonar-scanner/jre/bin/java && \
     ln -s /opt/sonar-scanner/bin/sonar-scanner /usr/local/bin/sonar-scanner
-
-# Add Docker socket mount point
-VOLUME ["/var/run/docker.sock"]
 
 # Set working directory
 WORKDIR /workspace
