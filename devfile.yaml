@@ -38,43 +38,36 @@ components:
       env:
         - name: CLAUDE_CONFIG_DIR
           value: /tmp/claude-config
-        - name: STORAGE_PATH
-          value: /tmp/sonarqube-mcp-storage
+        - name: JENKINS_URL
+          value: "https://jenkins.ethosengine.com"
 commands:
 - id: setup-claude-mcp
   exec:
     component: tools
+    workingDir: /projects/che-devworkspaces
     commandLine: |
-      set -e     
-      # Add to bashrc for persistence
-      echo "export SONARQUBE_URL='$SONARQUBE_URL'" >> ~/.bashrc
-      echo "export SONARQUBE_TOKEN='$SONARQUBE_TOKEN'" >> ~/.bashrc
-      echo "export STORAGE_PATH='$STORAGE_PATH'" >> ~/.bashrc
-      
-      # Create storage directory
+      export STORAGE_PATH=/tmp/sonarqube-mcp-storage
       mkdir -p "$STORAGE_PATH"
-      echo "Created storage directory: $STORAGE_PATH"
-      
-      # Verify setup prerequisites
-      echo "Java version:"
-      java -version
-      echo "SonarQube MCP JAR:"
-      ls -la /opt/mcp/sonarqube-mcp.jar
-      
-      claude mcp remove sonarqube 2>/dev/null || echo "No existing sonarqube MCP server to remove"
-
+      claude mcp remove sonarqube 2>/dev/null || true
       claude mcp add sonarqube \
         --env STORAGE_PATH="$STORAGE_PATH" \
         --env SONARQUBE_TOKEN="$SONARQUBE_TOKEN" \
         --env SONARQUBE_URL="$SONARQUBE_URL" \
         -- java -jar /opt/mcp/sonarqube-mcp.jar
+      claude mcp remove jenkins 2>/dev/null || true
       
-      # Verify the server was added
-      echo "Configured MCP servers:"
-      claude mcp list
+      export JENKINS_AUTH=$(echo -n "$JENKINS_USERNAME:$JENKINS_TOKEN" | base64)
       
-      echo "Claude MCP setup completed successfully!"
+      # Add Jenkins MCP server using HTTP transport
+      claude mcp add jenkins "$JENKINS_URL/mcp-server/mcp" \
+        --transport http \
+        --header "Authorization: Basic $JENKINS_AUTH" \
+        --env JENKINS_URL="$JENKINS_URL" \
+        --env JENKINS_USERNAME="$JENKINS_USERNAME" \
+        --env JENKINS_TOKEN="$JENKINS_TOKEN"      
 
+
+        
 events:
   postStart:
     - setup-claude-mcp
