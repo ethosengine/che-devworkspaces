@@ -1,5 +1,5 @@
-#podman build --pull --no-cache -t harbor.ethosengine.com/devspaces/udi-plus-angular:ubi9-plus-angular-latest .
-#podman push harbor.ethosengine.com/devspaces/udi-plus-angular:ubi9-plus-angular-latest
+#podman build --pull --no-cache -t harbor.ethosengine.com/devspaces/udi-plus-angular:latest .
+#podman push harbor.ethosengine.com/devspaces/udi-plus-angular:latest
 
 FROM quay.io/devfile/universal-developer-image:ubi9-latest
 
