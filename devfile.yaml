@@ -38,4 +38,43 @@ components:
       env:
         - name: CLAUDE_CONFIG_DIR
           value: /tmp/claude-config
+        - name: STORAGE_PATH
+          value: /tmp/sonarqube-mcp-storage
+commands:
+- id: setup-claude-mcp
+  exec:
+    component: tools
+    commandLine: |
+      set -e     
+      # Add to bashrc for persistence
+      echo "export SONARQUBE_URL='$SONARQUBE_URL'" >> ~/.bashrc
+      echo "export SONARQUBE_TOKEN='$SONARQUBE_TOKEN'" >> ~/.bashrc
+      echo "export STORAGE_PATH='$STORAGE_PATH'" >> ~/.bashrc
+      
+      # Create storage directory
+      mkdir -p "$STORAGE_PATH"
+      echo "Created storage directory: $STORAGE_PATH"
+      
+      # Verify setup prerequisites
+      echo "Java version:"
+      java -version
+      echo "SonarQube MCP JAR:"
+      ls -la /opt/mcp/sonarqube-mcp.jar
+      
+      claude mcp remove sonarqube 2>/dev/null || echo "No existing sonarqube MCP server to remove"
 
+      claude mcp add sonarqube \
+        --env STORAGE_PATH="$STORAGE_PATH" \
+        --env SONARQUBE_TOKEN="$SONARQUBE_TOKEN" \
+        --env SONARQUBE_URL="$SONARQUBE_URL" \
+        -- java -jar /opt/mcp/sonarqube-mcp.jar
+      
+      # Verify the server was added
+      echo "Configured MCP servers:"
+      claude mcp list
+      
+      echo "Claude MCP setup completed successfully!"
+
+events:
+  postStart:
+    - setup-claude-mcp
