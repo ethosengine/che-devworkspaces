@@ -29,7 +29,7 @@ metadata:
 components:
   - name: tools
     container:
-      image: harbor.ethosengine.com/devspaces/udi-plus:ubi9-plus-latest
+      image: harbor.ethosengine.com/devspaces/udi-plus:latest
       memoryLimit: 6G
       memoryRequest: 512Mi
       cpuRequest: 1000m
