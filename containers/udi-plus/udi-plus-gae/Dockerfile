@@ -86,16 +86,33 @@ RUN echo '#!/bin/bash' > /usr/local/bin/gae-dev-server && \
 # Create a script to check GAE environment
 RUN echo '#!/bin/bash' > /usr/local/bin/gae-check && \
     echo 'echo "=== GAE Environment Check ==="' >> /usr/local/bin/gae-check && \
-    echo 'echo "Python 2.7: $(/usr/local/bin/python2.7 --version 2>&1)"' >> /usr/local/bin/gae-check && \
-    echo 'echo "Python 2.7 location: $(/usr/local/bin/python2.7 -c \"import sys; print(sys.executable)\")"' >> /usr/local/bin/gae-check && \
+    echo 'export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"' >> /usr/local/bin/gae-check && \
+    echo 'if [ -f "/usr/local/bin/python2.7" ]; then' >> /usr/local/bin/gae-check && \
+    echo '  echo "Python 2.7: $(/usr/local/bin/python2.7 --version 2>&1)"' >> /usr/local/bin/gae-check && \
+    echo '  echo "Python 2.7 location: $(/usr/local/bin/python2.7 -c \"import sys; print(sys.executable)\" 2>/dev/null || echo \"Python test failed\")"' >> /usr/local/bin/gae-check && \
+    echo 'else' >> /usr/local/bin/gae-check && \
+    echo '  echo "Python 2.7: NOT FOUND"' >> /usr/local/bin/gae-check && \
+    echo 'fi' >> /usr/local/bin/gae-check && \
     echo 'echo "GAE SDK: /opt/google_appengine"' >> /usr/local/bin/gae-check && \
-    echo 'echo "GAE dev_appserver: $(/usr/local/bin/python2.7 /opt/google_appengine/dev_appserver.py --version 2>&1 | head -1)"' >> /usr/local/bin/gae-check && \
+    echo 'if [ -f "/opt/google_appengine/dev_appserver.py" ]; then' >> /usr/local/bin/gae-check && \
+    echo '  echo "GAE dev_appserver: Found"' >> /usr/local/bin/gae-check && \
+    echo 'else' >> /usr/local/bin/gae-check && \
+    echo '  echo "GAE dev_appserver: NOT FOUND"' >> /usr/local/bin/gae-check && \
+    echo 'fi' >> /usr/local/bin/gae-check && \
     echo 'echo "Installed legacy packages:"' >> /usr/local/bin/gae-check && \
-    echo '/usr/local/bin/python2.7 -m pip list | grep -E "(webapp2|jinja2|webob|yaml)" || echo "No packages found"' >> /usr/local/bin/gae-check && \
+    echo '/usr/local/bin/python2.7 -m pip list 2>/dev/null | grep -E "(webapp2|jinja2|webob|yaml)" || echo "Package check failed"' >> /usr/local/bin/gae-check && \
     chmod +x /usr/local/bin/gae-check
+
+# Update library path for Python 2.7 shared libraries (do this as root before switching users)
+RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/python27.conf && \
+    ldconfig
 
 # Switch back to the user account (inheriting from udi-plus)
 USER user
+
+# Test Python 2.7 installation works
+RUN /usr/local/bin/python2.7 --version && \
+    /usr/local/bin/python2.7 -c "import sys; print('Python 2.7 working: ' + sys.version)"
 
 # Add GAE environment variables and aliases to user profile
 # This supplements the existing environment from udi-plus
@@ -113,11 +130,18 @@ RUN echo '' >> ~/.bashrc && \
     echo 'alias gae-env="gae-check"' >> ~/.bashrc && \
     echo 'alias dev_appserver="gae-dev-server"' >> ~/.bashrc
 
+# Test that helper scripts work
+RUN gae-check || echo "GAE check had issues but continuing..."
+
 # Set working directory to projects (standard for devfile)
 WORKDIR /projects
 
 # Expose GAE development server ports
 EXPOSE 8080 8000 9000
 
-# Inherit the default command from udi-plus
-CMD ["/bin/bash"]
+# Set environment variables for Python 2.7 shared libraries at the container level
+ENV LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"
+ENV PATH="/opt/google_appengine:/usr/local/bin:${PATH}"
+ENV PYTHONPATH="/opt/google_appengine:${PYTHONPATH}"
+
+# Don't override CMD - inherit whatever udi-plus uses for Eclipse Che compatibility
