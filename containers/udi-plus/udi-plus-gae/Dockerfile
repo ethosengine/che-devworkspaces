@@ -57,7 +57,7 @@ RUN wget -q https://storage.googleapis.com/appengine-sdks/featured/google_appeng
     chmod -R 755 /opt/google_appengine
 
 # Install common legacy Python packages that Khan Academy dependencies require
-# Using older versions that are more compatible with Python 2.7 and don't require Cython
+# Using older versions that are compatible with Python 2.7 and GAE
 RUN /usr/local/bin/python2.7 -m pip install \
     webapp2==2.5.2 \
     jinja2==2.10.1 \
@@ -65,7 +65,8 @@ RUN /usr/local/bin/python2.7 -m pip install \
     pyyaml==3.13 \
     requests==2.25.1 \
     markupsafe==1.1.1 \
-    six==1.16.0
+    six==1.16.0 \
+    django==1.3.7
 
 # Install packages that require compilation separately with fallbacks
 RUN /usr/local/bin/python2.7 -m pip install lxml==4.2.6 || \
@@ -75,33 +76,6 @@ RUN /usr/local/bin/python2.7 -m pip install lxml==4.2.6 || \
 RUN /usr/local/bin/python2.7 -m pip install pillow==6.2.2 || \
     /usr/local/bin/python2.7 -m pip install pillow==5.4.1 || \
     echo "pillow installation failed - skipping"
-
-# Create helpful scripts for GAE development
-RUN echo '#!/bin/bash' > /usr/local/bin/gae-dev-server && \
-    echo 'export PATH="/opt/google_appengine:$PATH"' >> /usr/local/bin/gae-dev-server && \
-    echo 'export PYTHONPATH="/opt/google_appengine:$PYTHONPATH"' >> /usr/local/bin/gae-dev-server && \
-    echo '/usr/local/bin/python2.7 /opt/google_appengine/dev_appserver.py "$@"' >> /usr/local/bin/gae-dev-server && \
-    chmod +x /usr/local/bin/gae-dev-server
-
-# Create a script to check GAE environment
-RUN echo '#!/bin/bash' > /usr/local/bin/gae-check && \
-    echo 'echo "=== GAE Environment Check ==="' >> /usr/local/bin/gae-check && \
-    echo 'export LD_LIBRARY_PATH="/usr/local/lib:$LD_LIBRARY_PATH"' >> /usr/local/bin/gae-check && \
-    echo 'if [ -f "/usr/local/bin/python2.7" ]; then' >> /usr/local/bin/gae-check && \
-    echo '  echo "Python 2.7: $(/usr/local/bin/python2.7 --version 2>&1)"' >> /usr/local/bin/gae-check && \
-    echo '  echo "Python 2.7 location: $(/usr/local/bin/python2.7 -c \"import sys; print(sys.executable)\" 2>/dev/null || echo \"Python test failed\")"' >> /usr/local/bin/gae-check && \
-    echo 'else' >> /usr/local/bin/gae-check && \
-    echo '  echo "Python 2.7: NOT FOUND"' >> /usr/local/bin/gae-check && \
-    echo 'fi' >> /usr/local/bin/gae-check && \
-    echo 'echo "GAE SDK: /opt/google_appengine"' >> /usr/local/bin/gae-check && \
-    echo 'if [ -f "/opt/google_appengine/dev_appserver.py" ]; then' >> /usr/local/bin/gae-check && \
-    echo '  echo "GAE dev_appserver: Found"' >> /usr/local/bin/gae-check && \
-    echo 'else' >> /usr/local/bin/gae-check && \
-    echo '  echo "GAE dev_appserver: NOT FOUND"' >> /usr/local/bin/gae-check && \
-    echo 'fi' >> /usr/local/bin/gae-check && \
-    echo 'echo "Installed legacy packages:"' >> /usr/local/bin/gae-check && \
-    echo '/usr/local/bin/python2.7 -m pip list 2>/dev/null | grep -E "(webapp2|jinja2|webob|yaml)" || echo "Package check failed"' >> /usr/local/bin/gae-check && \
-    chmod +x /usr/local/bin/gae-check
 
 # Update library path for Python 2.7 shared libraries (do this as root before switching users)
 RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/python27.conf && \
@@ -113,25 +87,6 @@ USER user
 # Test Python 2.7 installation works
 RUN /usr/local/bin/python2.7 --version && \
     /usr/local/bin/python2.7 -c "import sys; print('Python 2.7 working: ' + sys.version)"
-
-# Add GAE environment variables and aliases to user profile
-# This supplements the existing environment from udi-plus
-RUN echo '' >> ~/.bashrc && \
-    echo '# Legacy GAE Python 2.7 Environment' >> ~/.bashrc && \
-    echo 'export GAE_SDK_ROOT=/opt/google_appengine' >> ~/.bashrc && \
-    echo 'export PATH="/opt/google_appengine:/usr/local/bin:${PATH}"' >> ~/.bashrc && \
-    echo 'export PYTHONPATH="/opt/google_appengine:${PYTHONPATH}"' >> ~/.bashrc && \
-    echo 'export LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH}"' >> ~/.bashrc && \
-    echo '' >> ~/.bashrc && \
-    echo '# GAE Development Aliases' >> ~/.bashrc && \
-    echo 'alias python2="/usr/local/bin/python2.7"' >> ~/.bashrc && \
-    echo 'alias python-legacy="/usr/local/bin/python2.7"' >> ~/.bashrc && \
-    echo 'alias gae-server="gae-dev-server"' >> ~/.bashrc && \
-    echo 'alias gae-env="gae-check"' >> ~/.bashrc && \
-    echo 'alias dev_appserver="gae-dev-server"' >> ~/.bashrc
-
-# Test that helper scripts work
-RUN gae-check || echo "GAE check had issues but continuing..."
 
 # Set working directory to projects (standard for devfile)
 WORKDIR /projects
