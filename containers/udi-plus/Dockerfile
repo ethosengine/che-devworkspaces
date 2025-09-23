@@ -19,6 +19,17 @@ ENV PATH=/usr/lib/jvm/java-21-openjdk/bin:$PATH
 # Verify Java 21 is working
 RUN java -version && javac -version
 
+# Install essential CLI tools for Claude Code context management
+RUN dnf install -y \
+    tree \
+    htop \
+    ncdu \
+    fzf \
+    tmux \
+    screen \
+    mc \
+    && dnf clean all
+
 # Create Claude + MCP dirs and make them user-writable
 RUN mkdir -p /home/user/.claude \
            /home/user/.cache/sonarqube-mcp \
