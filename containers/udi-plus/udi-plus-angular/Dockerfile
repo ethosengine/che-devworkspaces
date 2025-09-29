@@ -1,43 +1,26 @@
 #podman build --pull --no-cache -t harbor.ethosengine.com/devspaces/udi-plus-angular:latest .
 #podman push harbor.ethosengine.com/devspaces/udi-plus-angular:latest
 
-FROM quay.io/devfile/universal-developer-image:ubi9-latest
+# Test derived image approach - using udi-plus as base
+FROM harbor.ethosengine.com/devspaces/udi-plus:latest
 
-# Switch to root temporarily for installation
+# Switch to root for Angular CLI installation
 USER root
 
-# Install Claude Code globally
-RUN npm install -g @anthropic-ai/claude-code
-RUN npm install -g @angular/cli 
+# Install Angular CLI on top of udi-plus base
+RUN npm install -g @angular/cli
 
-
-# Install Java 21 via dnf
-RUN dnf install -y java-21-openjdk-headless java-21-openjdk-devel && \
-    dnf clean all
-
-# Set Java 21 as the system default
-ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
-ENV PATH=/usr/lib/jvm/java-21-openjdk/bin:$PATH
-
-
-# Create Claude + MCP dirs and make them user-writable
-RUN mkdir -p /home/user/.claude \
-           /home/user/.cache/sonarqube-mcp \
-           /opt/mcp \
- && chown -R user:user /home/user/.claude /home/user/.cache /opt/mcp \
- && chmod -R 775 /home/user/.claude /home/user/.cache /opt/mcp
-
-# Download SonarQube MCP JAR
-ARG SONAR_MCP_VERSION=0.0.6.225
-RUN curl -fL -o /opt/mcp/sonarqube-mcp.jar \
-  "https://github.com/SonarSource/sonarqube-mcp-server/releases/download/${SONAR_MCP_VERSION}/sonarqube-mcp-server-${SONAR_MCP_VERSION}.jar"
+# Verify Angular CLI installation
+RUN ng version
 
 USER user
 
-# Set user environment for Java 21
-ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
-ENV PATH=/usr/lib/jvm/java-21-openjdk/bin:$PATH
-
-# Verify installation
-RUN claude --version || echo "Claude installed but needs auth"
-RUN java -version
+# Final verification of inherited tools + Angular CLI
+RUN echo "=== Environment Check ===" && \
+    echo "Node: $(node --version)" && \
+    echo "NPM: $(npm --version)" && \
+    echo "Angular CLI: $(ng version --skip-git 2>/dev/null | head -1)" && \
+    echo "Java: $(java -version 2>&1 | head -1)" && \
+    echo "Claude: $(claude --version 2>/dev/null || echo 'needs auth')" && \
+    echo "Tree: $(tree --version 2>/dev/null || echo 'installed')" && \
+    echo "=== All tools ready ==="

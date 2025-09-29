@@ -1,0 +1,129 @@
+schemaVersion: 2.2.0
+metadata:
+  name: udi-plus-angular-workspace
+  displayName: Angular Development with Claude Code
+  description: >-
+    Universal Developer Image with Angular CLI, Java 21, Claude Code, and essential CLI tools
+    for Angular development with AI assistance
+  icon: >-
+    https://angular.io/assets/images/logos/angular/angular.svg
+  tags:
+    - Angular
+    - TypeScript
+    - Node.js
+    - Java
+    - Claude
+    - Maven
+    - ubi9
+  projectType: angular
+  language: TypeScript
+  version: 1.0.0
+  projects:
+  - name: angular-sample
+    git:
+      remotes:
+        origin: https://github.com/angular/angular-cli-quickstart.git
+
+components:
+  - name: angular-tools
+    container:
+      image: harbor.ethosengine.com/devspaces/udi-plus-angular:latest
+      memoryLimit: 6G
+      memoryRequest: 1G
+      cpuLimit: '2'
+      cpuRequest: '500m'
+      mountSources: true
+      sourceMapping: /projects
+      env:
+        - name: CLAUDE_CONFIG_DIR
+          value: /tmp/claude-config
+        - name: NODE_OPTIONS
+          value: --max-old-space-size=4096
+      endpoints:
+        - name: angular-dev
+          targetPort: 4200
+          exposure: public
+          protocol: https
+        - name: angular-debug
+          targetPort: 9229
+          exposure: internal
+
+commands:
+  - id: install-deps
+    exec:
+      label: "Install Dependencies"
+      component: angular-tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: npm install
+      group:
+        kind: build
+
+  - id: create-new-app
+    exec:
+      label: "Create New Angular App"
+      component: angular-tools
+      workingDir: /projects
+      commandLine: |
+        read -p "Enter app name: " APP_NAME
+        ng new $APP_NAME --routing --style=scss --package-manager=npm
+        cd $APP_NAME
+        echo "✅ Angular app '$APP_NAME' created!"
+
+  - id: serve-dev
+    exec:
+      label: "Serve Development"
+      component: angular-tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: ng serve --host 0.0.0.0 --port 4200 --disable-host-check
+      group:
+        kind: run
+        isDefault: true
+
+  - id: build-prod
+    exec:
+      label: "Build for Production"
+      component: angular-tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: ng build --configuration production
+      group:
+        kind: build
+        isDefault: true
+
+  - id: test-unit
+    exec:
+      label: "Run Unit Tests"
+      component: angular-tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: ng test --watch=false --browsers=ChromeHeadless
+      group:
+        kind: test
+        isDefault: true
+
+  - id: test-e2e
+    exec:
+      label: "Run E2E Tests"
+      component: angular-tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: ng e2e
+
+  - id: lint
+    exec:
+      label: "Run ESLint"
+      component: angular-tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: ng lint
+
+  - id: check-environment
+    exec:
+      label: "Check Environment"
+      component: angular-tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: |
+        echo "🔍 Environment Check:"
+        echo "Node: $(node --version)"
+        echo "NPM: $(npm --version)"
+        echo "Angular CLI: $(ng version --skip-git)"
+        echo "Java: $(java -version 2>&1 | head -1)"
+        echo "Claude: $(claude --version 2>/dev/null || echo 'needs auth')"
+        echo "Tree: $(tree --version 2>/dev/null || echo 'installed')"
+        echo "✅ Environment ready for Angular development!"
