@@ -233,7 +233,7 @@ spec:
 
                             # Run smoke tests with native snapshotter to avoid overlay mount issues
                             echo "Running smoke tests..."
-                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED} \\
+                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED} \
                               bash -c '
                                 set -e
                                 echo "Testing Claude Code..."
@@ -320,7 +320,7 @@ spec:
 
                             # Run smoke tests with native snapshotter
                             echo "Running smoke tests..."
-                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_DATED} \\
+                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_DATED} \
                               bash -c '
                                 set -e
                                 echo "Testing Nix wrapper..."
@@ -402,7 +402,7 @@ spec:
 
                             # Run smoke tests with native snapshotter
                             echo "Running smoke tests..."
-                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_DATED} \\
+                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_DATED} \
                               bash -c '
                                 set -e
                                 echo "Testing Angular CLI..."
@@ -479,7 +479,7 @@ spec:
 
                             # Run smoke tests with native snapshotter
                             echo "Running smoke tests..."
-                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED} \\
+                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED} \
                               bash -c '
                                 set -e
                                 echo "Testing Python 2.7..."
