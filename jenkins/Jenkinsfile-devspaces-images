@@ -233,24 +233,7 @@ spec:
 
                             # Run smoke tests with native snapshotter to avoid overlay mount issues
                             echo "Running smoke tests..."
-                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED} \
-                              bash -c '
-                                set -e
-                                echo "Testing Claude Code..."
-                                claude --version || echo "Claude needs auth (expected)"
-
-                                echo "Testing Java..."
-                                java -version
-
-                                echo "Testing Node..."
-                                node --version
-                                npm --version
-
-                                echo "Testing SonarQube MCP..."
-                                test -f /opt/mcp/sonarqube-mcp.jar && echo "SonarQube MCP JAR found" || exit 1
-
-                                echo "All smoke tests passed!"
-                              '
+                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED} bash -c 'set -e && echo "Testing Claude Code..." && (claude --version || echo "Claude needs auth (expected)") && echo "Testing Java..." && java -version && echo "Testing Node..." && node --version && npm --version && echo "Testing SonarQube MCP..." && test -f /opt/mcp/sonarqube-mcp.jar && echo "SonarQube MCP JAR found" && echo "All smoke tests passed!"'
                         """
 
                         echo "✅ udi-plus smoke tests passed"
@@ -320,20 +303,7 @@ spec:
 
                             # Run smoke tests with native snapshotter
                             echo "Running smoke tests..."
-                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_DATED} \
-                              bash -c '
-                                set -e
-                                echo "Testing Nix wrapper..."
-                                test -f /home/user/bin/nix && echo "Nix wrapper found" || exit 1
-
-                                echo "Testing init script..."
-                                test -f /home/user/bin/init-nix && echo "Init script found" || exit 1
-
-                                echo "Testing environment..."
-                                test -d /nix && echo "Nix directory exists" || exit 1
-
-                                echo "All smoke tests passed!"
-                              '
+                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_DATED} bash -c 'set -e && echo "Testing Nix wrapper..." && test -f /home/user/bin/nix && echo "Nix wrapper found" && echo "Testing init script..." && test -f /home/user/bin/init-nix && echo "Init script found" && echo "Testing environment..." && test -d /nix && echo "Nix directory exists" && echo "All smoke tests passed!"'
                         """
 
                         echo "✅ rust-nix-dev smoke tests passed"
@@ -402,14 +372,7 @@ spec:
 
                             # Run smoke tests with native snapshotter
                             echo "Running smoke tests..."
-                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_DATED} \
-                              bash -c '
-                                set -e
-                                echo "Testing Angular CLI..."
-                                ng version --skip-git 2>/dev/null | head -1
-
-                                echo "All smoke tests passed!"
-                              '
+                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_DATED} bash -c 'set -e && echo "Testing Angular CLI..." && ng version --skip-git 2>/dev/null | head -1 && echo "All smoke tests passed!"'
                         """
 
                         echo "✅ udi-plus-angular smoke tests passed"
@@ -479,20 +442,7 @@ spec:
 
                             # Run smoke tests with native snapshotter
                             echo "Running smoke tests..."
-                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED} \
-                              bash -c '
-                                set -e
-                                echo "Testing Python 2.7..."
-                                /usr/local/bin/python2.7 --version
-
-                                echo "Testing GAE SDK..."
-                                test -d /opt/google_appengine && echo "GAE SDK found" || exit 1
-
-                                echo "Testing pip..."
-                                /usr/local/bin/python2.7 -m pip --version
-
-                                echo "All smoke tests passed!"
-                              '
+                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED} bash -c 'set -e && echo "Testing Python 2.7..." && /usr/local/bin/python2.7 --version && echo "Testing GAE SDK..." && test -d /opt/google_appengine && echo "GAE SDK found" && echo "Testing pip..." && /usr/local/bin/python2.7 -m pip --version && echo "All smoke tests passed!"'
                         """
 
                         echo "✅ udi-plus-gae smoke tests passed"
