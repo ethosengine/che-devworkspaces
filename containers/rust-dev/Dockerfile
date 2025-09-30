@@ -19,9 +19,19 @@ RUN dnf install -y \
     gtk3 \
     && dnf clean all
 
-# Create Nix store directory
-RUN mkdir -p /nix && \
+# Create Nix store and config directories
+RUN mkdir -p /nix /etc/nix && \
     chown user:user /nix
+
+# Configure Nix settings (system-level for better performance)
+RUN printf 'experimental-features = nix-command flakes\n\
+accept-flake-config = true\n\
+substituters = https://cache.nixos.org https://holochain-ci.cachix.org https://darksoil-studio.cachix.org\n\
+trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= holochain-ci.cachix.org-1:5IUSkZc0aoRS53rfkvH9Kid40NpyjwCMCzwRTXy+QN8= darksoil-studio.cachix.org-1:UEi+aujy44s41XL/pscLw37KEVpTEIn8N/kn7jO8rkc=\n\
+sandbox = false\n\
+system-features = recursive-nix\n\
+filter-syscalls = false\n' \
+    > /etc/nix/nix.conf
 
 # Create XDG directories that will be volume-mounted
 RUN mkdir -p /nix-xdg/{cache,data,state,config} && \
@@ -36,7 +46,7 @@ RUN mkdir -p /home/user/bin && \
     printf '#!/bin/bash\n\
 set -e\n\
 \n\
-echo "🔧 Initializing Holochain development environment..."\n\
+echo "🔧 Initializing Nix environment..."\n\
 \n\
 # Set up environment\n\
 export XDG_CACHE_HOME=/nix-xdg/cache\n\
@@ -54,36 +64,33 @@ mkdir -p /nix-xdg/cache/npm\n\
 if [ -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ] && [ -d "$HOME/.nix-profile/bin" ]; then\n\
     echo "✅ Nix already installed and working"\n\
     source "$HOME/.nix-profile/etc/profile.d/nix.sh"\n\
-    # Test Holochain scaffolding tool\n\
-    if nix run --refresh -j0 -v "github:holochain/holonix?ref=main-0.5#hc-scaffold" -- --version >/dev/null 2>&1; then\n\
-        echo "✅ Holochain development environment ready!"\n\
-        exit 0\n\
-    fi\n\
+    exit 0\n\
 fi\n\
 \n\
-echo "📦 Installing Holochain development environment..."\n\
+echo "📦 Installing Nix..."\n\
 \n\
 # Clean up any broken profiles\n\
 rm -rf ~/.nix-profile ~/.nix-defexpr ~/.nix-channels ~/.local/state/nix 2>/dev/null || true\n\
 \n\
-# Install using official Holochain setup script\n\
-bash <(curl https://holochain.github.io/holochain/setup.sh)\n\
+# Install Nix\n\
+curl -L https://nixos.org/nix/install | sh -s -- --no-daemon\n\
 \n\
 # Source the profile\n\
 source "$HOME/.nix-profile/etc/profile.d/nix.sh"\n\
 \n\
-echo "🧪 Verifying Holochain setup..."\n\
-nix run --refresh -j0 -v "github:holochain/holonix?ref=main-0.5#hc-scaffold" -- --version\n\
+# Configure channels\n\
+nix-channel --add https://nixos.org/channels/nixpkgs-unstable nixpkgs\n\
+nix-channel --update\n\
 \n\
-echo "✅ Holochain development environment installation complete!"\n\
-echo "🚀 Ready to scaffold Holochain applications!"\n' \
-    > /home/user/bin/init-holochain && chmod +x /home/user/bin/init-holochain
+echo "✅ Nix installation complete!"\n\
+echo "🚀 Run '\''source ~/.nix-profile/etc/profile.d/nix.sh'\'' to activate"\n' \
+    > /home/user/bin/init-nix && chmod +x /home/user/bin/init-nix
 
 # Create nix wrapper that ensures initialization
 RUN printf '#!/bin/bash\n\
 if [ ! -f "$HOME/.nix-profile/bin/nix" ]; then\n\
     echo "🔧 Nix not found, running initialization..."\n\
-    /home/user/bin/init-holochain\n\
+    /home/user/bin/init-nix\n\
     source "$HOME/.nix-profile/etc/profile.d/nix.sh"\n\
 fi\n\
 \n\
@@ -98,9 +105,10 @@ export NPM_CONFIG_CACHE=/nix-xdg/cache/npm\n\
 exec "$HOME/.nix-profile/bin/nix" "$@"\n' \
     > /home/user/bin/nix && chmod +x /home/user/bin/nix
 
+
 # Update bashrc for automatic setup
 RUN printf '\n\
-# Holochain Development Environment Setup\n\
+# Nix Environment Setup\n\
 export XDG_CACHE_HOME=/nix-xdg/cache\n\
 export XDG_DATA_HOME=/nix-xdg/data\n\
 export XDG_STATE_HOME=/nix-xdg/state\n\
@@ -112,10 +120,10 @@ export NPM_CONFIG_CACHE=/nix-xdg/cache/npm\n\
 # Add user bin to PATH\n\
 export PATH=/home/user/bin:$PATH\n\
 \n\
-# Auto-initialize Holochain environment on first shell\n\
+# Auto-initialize Nix on first shell\n\
 if [ ! -f "$HOME/.nix-profile/bin/nix" ] && [ -t 0 ]; then\n\
-    echo "🔧 First run detected, initializing Holochain development environment..."\n\
-    /home/user/bin/init-holochain\n\
+    echo "🔧 First run detected, initializing Nix..."\n\
+    /home/user/bin/init-nix\n\
 fi\n\
 \n\
 # Source Nix profile if available\n\
@@ -125,21 +133,13 @@ fi\n\
 \n\
 # Holochain helper functions\n\
 holo-scaffold() {\n\
-    echo "🚀 Scaffolding new Holochain application..."\n\
-    nix run --refresh -j0 -v "github:holochain/holonix?ref=main-0.5#hc-scaffold" -- "$@"\n\
+    nix run "github:holochain/holonix?ref=main-0.5#hc-scaffold" -- "$@"\n\
 }\n\
 \n\
 holo-new-project() {\n\
-    cd /projects\n\
-    echo "📍 Creating new project in /projects"\n\
     echo "Available templates: web-app, vanilla, lit, svelte, react, vue, headless"\n\
-    echo "Usage: holo-scaffold web-app my-forum-app"\n\
+    echo "Usage: holo-scaffold web-app my-app-name"\n\
 }\n\
-\n\
-if [ -f "$HOME/.nix-profile/bin/nix" ]; then\n\
-    echo "🚀 Holochain Development Environment Ready!"\n\
-    echo "   Run '\''holo-new-project'\'' to get started"\n\
-    echo "   Run '\''holo-scaffold web-app my-app'\'' to create a new hApp"\n\
-fi\n' >> /home/user/.bashrc
+\n' >> /home/user/.bashrc
 
 WORKDIR /projects

@@ -28,6 +28,8 @@ components:
       mountSources: true
       sourceMapping: /projects
       env:
+        - name: CLAUDE_CONFIG_DIR
+          value: /tmp/claude-config
         - name: RUST_BACKTRACE
           value: '1'
         - name: USER
