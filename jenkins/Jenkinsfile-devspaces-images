@@ -454,20 +454,27 @@ spec:
         }
 
         stage('Push to Harbor') {
-            when {
-                expression {
-                    echo "DEBUG Push when check: IMAGES_BUILT='${env.IMAGES_BUILT}', SKIP_PUSH=${params.SKIP_PUSH}"
-                    return env.IMAGES_BUILT != '' && env.IMAGES_BUILT != null && !params.SKIP_PUSH
-                }
-            }
             steps {
                 container('builder') {
-                    withCredentials([usernamePassword(credentialsId: 'harbor-robot-registry',
-                                                      passwordVariable: 'HARBOR_PASSWORD',
-                                                      usernameVariable: 'HARBOR_USERNAME')]) {
-                        script {
+                    script {
+                        echo "=== Push to Harbor Stage ==="
+                        echo "DEBUG: IMAGES_BUILT='${env.IMAGES_BUILT}', SKIP_PUSH=${params.SKIP_PUSH}"
+
+                        if (params.SKIP_PUSH) {
+                            echo "⏭️  Skipping push (SKIP_PUSH=true)"
+                            return
+                        }
+
+                        if (!env.IMAGES_BUILT || env.IMAGES_BUILT == '' || env.IMAGES_BUILT == 'null') {
+                            echo "⏭️  No images were built, skipping push"
+                            return
+                        }
+
+                        withCredentials([usernamePassword(credentialsId: 'harbor-robot-registry',
+                                                          passwordVariable: 'HARBOR_PASSWORD',
+                                                          usernameVariable: 'HARBOR_USERNAME')]) {
                             echo "=== Pushing images to Harbor ==="
-                            echo "DEBUG: IMAGES_BUILT value at push start: '${env.IMAGES_BUILT}'"
+                            echo "Images to push: ${env.IMAGES_BUILT}"
 
                             sh '''
                                 echo $HARBOR_PASSWORD | nerdctl -n k8s.io login harbor.ethosengine.com/devspaces -u $HARBOR_USERNAME --password-stdin
@@ -522,15 +529,25 @@ spec:
         }
 
         stage('Harbor Security Scan') {
-            when {
-                expression { env.IMAGES_BUILT != '' && !params.SKIP_SECURITY_SCAN }
-            }
             steps {
                 container('builder') {
-                    withCredentials([usernamePassword(credentialsId: 'harbor-robot-registry',
-                                                      passwordVariable: 'HARBOR_PASSWORD',
-                                                      usernameVariable: 'HARBOR_USERNAME')]) {
-                        script {
+                    script {
+                        echo "=== Harbor Security Scan Stage ==="
+                        echo "DEBUG: IMAGES_BUILT='${env.IMAGES_BUILT}', SKIP_SECURITY_SCAN=${params.SKIP_SECURITY_SCAN}"
+
+                        if (params.SKIP_SECURITY_SCAN) {
+                            echo "⏭️  Skipping security scan (SKIP_SECURITY_SCAN=true)"
+                            return
+                        }
+
+                        if (!env.IMAGES_BUILT || env.IMAGES_BUILT == '' || env.IMAGES_BUILT == 'null') {
+                            echo "⏭️  No images were built, skipping security scan"
+                            return
+                        }
+
+                        withCredentials([usernamePassword(credentialsId: 'harbor-robot-registry',
+                                                          passwordVariable: 'HARBOR_PASSWORD',
+                                                          usernameVariable: 'HARBOR_USERNAME')]) {
                             echo "=== Triggering Harbor security scans ==="
 
                             // Trigger scans sequentially (only for images that were pushed)
@@ -603,12 +620,14 @@ spec:
         }
 
         stage('Archive Build Info') {
-            when {
-                expression { env.IMAGES_BUILT != '' }
-            }
             steps {
                 container('builder') {
                     script {
+                        if (!env.IMAGES_BUILT || env.IMAGES_BUILT == '' || env.IMAGES_BUILT == 'null') {
+                            echo "⏭️  No images were built, skipping build info archive"
+                            return
+                        }
+
                         def metadata = """# DevSpaces Image Build Metadata
 BUILD_DATE=${new Date()}
 GIT_HASH=${env.GIT_HASH}
