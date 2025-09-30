@@ -2,7 +2,8 @@
 #podman push harbor.ethosengine.com/devspaces/udi-plus-angular:latest
 
 # Test derived image approach - using udi-plus as base
-FROM harbor.ethosengine.com/devspaces/udi-plus:latest
+ARG BASE_TAG=latest
+FROM harbor.ethosengine.com/devspaces/udi-plus:${BASE_TAG}
 
 # Switch to root for Angular CLI installation
 USER root

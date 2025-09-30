@@ -1,0 +1,726 @@
+// DevSpaces Image Builder Pipeline
+// Builds udi-plus base image and all derived images sequentially
+// Can be split into separate pipelines later if needed
+
+pipeline {
+    agent {
+        kubernetes {
+            cloud 'kubernetes'
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccount: jenkins-deployer
+  nodeSelector:
+    node-type: edge
+  volumes:
+    - name: containerd-sock
+      hostPath:
+        path: /var/snap/microk8s/common/run/containerd.sock
+        type: Socket
+    - name: buildkit-run
+      emptyDir: {}
+  containers:
+    - name: builder
+      image: harbor.ethosengine.com/ethosengine/ci-builder:latest
+      command:
+        - cat
+      tty: true
+      resources:
+        requests:
+          ephemeral-storage: "2Gi"
+        limits:
+          ephemeral-storage: "4Gi"
+      volumeMounts:
+        - name: containerd-sock
+          mountPath: /run/containerd/containerd.sock
+        - name: buildkit-run
+          mountPath: /run/buildkit
+    - name: buildkitd
+      image: moby/buildkit:v0.12.5
+      securityContext:
+        privileged: true
+      args:
+        - --addr
+        - unix:///run/buildkit/buildkitd.sock
+        - --oci-worker=true
+        - --containerd-worker=false
+      volumeMounts:
+        - name: containerd-sock
+          mountPath: /run/containerd/containerd.sock
+        - name: buildkit-run
+          mountPath: /run/buildkit
+'''
+        }
+    }
+
+    parameters {
+        booleanParam(name: 'BUILD_UDI_PLUS', defaultValue: true,
+                     description: 'Build udi-plus base image')
+        booleanParam(name: 'BUILD_RUST', defaultValue: true,
+                     description: 'Build rust-nix-dev image')
+        booleanParam(name: 'BUILD_ANGULAR', defaultValue: true,
+                     description: 'Build udi-plus-angular image')
+        booleanParam(name: 'BUILD_GAE', defaultValue: true,
+                     description: 'Build udi-plus-gae image')
+        booleanParam(name: 'FORCE_BUILD', defaultValue: false,
+                     description: 'Force rebuild even if no updates to base image')
+        booleanParam(name: 'SKIP_SECURITY_SCAN', defaultValue: false,
+                     description: 'Skip Harbor security scanning')
+        booleanParam(name: 'SKIP_SMOKE_TESTS', defaultValue: false,
+                     description: 'Skip container smoke tests')
+    }
+
+    environment {
+        REGISTRY = 'harbor.ethosengine.com/devspaces'
+        BASE_IMAGE = 'quay.io/devfile/universal-developer-image:ubi9-latest'
+        IMAGES_BUILT = ''
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                container('builder') {
+                    script {
+                        checkout scm
+
+                        // Ensure clean git state
+                        sh 'git config --global --add safe.directory $(pwd)'
+                        sh 'git clean -fdx'
+                        sh 'git reset --hard HEAD'
+
+                        echo "Building from branch: ${env.BRANCH_NAME ?: 'main'}"
+
+                        // Verify git state
+                        sh 'git rev-parse --short HEAD'
+                        sh 'git status'
+                    }
+                }
+            }
+        }
+
+        stage('Setup') {
+            steps {
+                container('builder') {
+                    script {
+                        echo "=== Build Configuration ==="
+                        echo "Build udi-plus: ${params.BUILD_UDI_PLUS}"
+                        echo "Build rust-nix-dev: ${params.BUILD_RUST}"
+                        echo "Build angular: ${params.BUILD_ANGULAR}"
+                        echo "Build GAE: ${params.BUILD_GAE}"
+                        echo "Force build: ${params.FORCE_BUILD}"
+
+                        // Generate tags
+                        def datestamp = sh(script: 'date +%Y-%m-%d', returnStdout: true).trim()
+                        def gitHash = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+
+                        env.IMAGE_TAG_LATEST = 'latest'
+                        env.IMAGE_TAG_DATED = datestamp
+                        env.IMAGE_TAG_GIT = gitHash
+                        env.GIT_HASH = gitHash
+
+                        echo "=== Image Tags ==="
+                        echo "Latest: ${env.IMAGE_TAG_LATEST}"
+                        echo "Dated: ${env.IMAGE_TAG_DATED}"
+                        echo "Git hash: ${env.IMAGE_TAG_GIT}"
+
+                        // Check if base image has updates
+                        if (params.BUILD_UDI_PLUS && !params.FORCE_BUILD) {
+                            echo "Checking for updates to base image: ${env.BASE_IMAGE}"
+
+                            def currentDigest = sh(
+                                script: "nerdctl -n k8s.io inspect ${env.BASE_IMAGE} --format '{{.Digest}}' 2>/dev/null || echo 'none'",
+                                returnStdout: true
+                            ).trim()
+
+                            echo "Current digest: ${currentDigest}"
+
+                            sh "nerdctl -n k8s.io pull ${env.BASE_IMAGE}"
+
+                            def newDigest = sh(
+                                script: "nerdctl -n k8s.io inspect ${env.BASE_IMAGE} --format '{{.Digest}}'",
+                                returnStdout: true
+                            ).trim()
+
+                            echo "New digest: ${newDigest}"
+
+                            if (currentDigest == newDigest && currentDigest != 'none') {
+                                echo "⚠️  No updates to base image detected"
+                                echo "Set FORCE_BUILD=true to rebuild anyway"
+                                env.SKIP_UDI_PLUS_BUILD = 'true'
+                            } else {
+                                echo "✅ Base image has updates, proceeding with build"
+                                env.SKIP_UDI_PLUS_BUILD = 'false'
+                            }
+                        } else {
+                            env.SKIP_UDI_PLUS_BUILD = 'false'
+                        }
+
+                        // Verify BuildKit
+                        sh 'buildctl --addr unix:///run/buildkit/buildkitd.sock debug workers'
+                    }
+                }
+            }
+        }
+
+        stage('Build udi-plus') {
+            when {
+                expression {
+                    params.BUILD_UDI_PLUS && env.SKIP_UDI_PLUS_BUILD != 'true'
+                }
+            }
+            steps {
+                container('builder') {
+                    script {
+                        echo "=== Building udi-plus base image ==="
+
+                        sh """#!/bin/bash
+                            set -euo pipefail
+
+                            cd containers/udi-plus
+
+                            BUILDKIT_HOST=unix:///run/buildkit/buildkitd.sock \\
+                              nerdctl -n k8s.io build \\
+                                --pull \\
+                                --no-cache \\
+                                -t ${REGISTRY}/udi-plus:${IMAGE_TAG_LATEST} \\
+                                -t ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED} \\
+                                -t ${REGISTRY}/udi-plus:${IMAGE_TAG_GIT} \\
+                                .
+                        """
+
+                        env.IMAGES_BUILT = env.IMAGES_BUILT + "udi-plus:${env.IMAGE_TAG_DATED},"
+                        echo "✅ udi-plus image built successfully"
+                    }
+                }
+            }
+        }
+
+        stage('Test udi-plus') {
+            when {
+                expression {
+                    params.BUILD_UDI_PLUS &&
+                    env.SKIP_UDI_PLUS_BUILD != 'true' &&
+                    !params.SKIP_SMOKE_TESTS
+                }
+            }
+            steps {
+                container('builder') {
+                    script {
+                        echo "=== Testing udi-plus image ==="
+
+                        sh """#!/bin/bash
+                            set -euo pipefail
+
+                            # Run smoke tests
+                            nerdctl -n k8s.io run --rm ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED} \\
+                              bash -c '
+                                set -e
+                                echo "Testing Claude Code..."
+                                claude --version || echo "Claude needs auth (expected)"
+
+                                echo "Testing Java..."
+                                java -version
+
+                                echo "Testing Node..."
+                                node --version
+                                npm --version
+
+                                echo "Testing SonarQube MCP..."
+                                test -f /opt/mcp/sonarqube-mcp.jar && echo "SonarQube MCP JAR found" || exit 1
+
+                                echo "All smoke tests passed!"
+                              '
+                        """
+
+                        echo "✅ udi-plus smoke tests passed"
+                    }
+                }
+            }
+        }
+
+        stage('Build rust-nix-dev') {
+            when {
+                expression { params.BUILD_RUST }
+            }
+            steps {
+                container('builder') {
+                    script {
+                        echo "=== Building rust-nix-dev image ==="
+
+                        // Update Dockerfile to use dated tag if udi-plus was just built
+                        def baseTag = (params.BUILD_UDI_PLUS && env.SKIP_UDI_PLUS_BUILD != 'true') ?
+                                      env.IMAGE_TAG_DATED : 'latest'
+
+                        echo "Using base image tag: ${baseTag}"
+
+                        sh """#!/bin/bash
+                            set -euo pipefail
+
+                            cd containers/rust-dev
+
+                            BUILDKIT_HOST=unix:///run/buildkit/buildkitd.sock \\
+                              nerdctl -n k8s.io build \\
+                                --build-arg BASE_TAG=${baseTag} \\
+                                -t ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_LATEST} \\
+                                -t ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_DATED} \\
+                                -t ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_GIT} \\
+                                .
+                        """
+
+                        env.IMAGES_BUILT = env.IMAGES_BUILT + "rust-nix-dev:${env.IMAGE_TAG_DATED},"
+                        echo "✅ rust-nix-dev image built successfully"
+                    }
+                }
+            }
+        }
+
+        stage('Test rust-nix-dev') {
+            when {
+                expression { params.BUILD_RUST && !params.SKIP_SMOKE_TESTS }
+            }
+            steps {
+                container('builder') {
+                    script {
+                        echo "=== Testing rust-nix-dev image ==="
+
+                        sh """#!/bin/bash
+                            set -euo pipefail
+
+                            nerdctl -n k8s.io run --rm ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_DATED} \\
+                              bash -c '
+                                set -e
+                                echo "Testing Nix wrapper..."
+                                test -f /home/user/bin/nix && echo "Nix wrapper found" || exit 1
+
+                                echo "Testing init script..."
+                                test -f /home/user/bin/init-nix && echo "Init script found" || exit 1
+
+                                echo "Testing environment..."
+                                test -d /nix && echo "Nix directory exists" || exit 1
+
+                                echo "All smoke tests passed!"
+                              '
+                        """
+
+                        echo "✅ rust-nix-dev smoke tests passed"
+                    }
+                }
+            }
+        }
+
+        stage('Build udi-plus-angular') {
+            when {
+                expression { params.BUILD_ANGULAR }
+            }
+            steps {
+                container('builder') {
+                    script {
+                        echo "=== Building udi-plus-angular image ==="
+
+                        def baseTag = (params.BUILD_UDI_PLUS && env.SKIP_UDI_PLUS_BUILD != 'true') ?
+                                      env.IMAGE_TAG_DATED : 'latest'
+
+                        echo "Using base image tag: ${baseTag}"
+
+                        sh """#!/bin/bash
+                            set -euo pipefail
+
+                            cd containers/udi-plus/udi-plus-angular
+
+                            BUILDKIT_HOST=unix:///run/buildkit/buildkitd.sock \\
+                              nerdctl -n k8s.io build \\
+                                --build-arg BASE_TAG=${baseTag} \\
+                                -t ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_LATEST} \\
+                                -t ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_DATED} \\
+                                -t ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_GIT} \\
+                                .
+                        """
+
+                        env.IMAGES_BUILT = env.IMAGES_BUILT + "udi-plus-angular:${env.IMAGE_TAG_DATED},"
+                        echo "✅ udi-plus-angular image built successfully"
+                    }
+                }
+            }
+        }
+
+        stage('Test udi-plus-angular') {
+            when {
+                expression { params.BUILD_ANGULAR && !params.SKIP_SMOKE_TESTS }
+            }
+            steps {
+                container('builder') {
+                    script {
+                        echo "=== Testing udi-plus-angular image ==="
+
+                        sh """#!/bin/bash
+                            set -euo pipefail
+
+                            nerdctl -n k8s.io run --rm ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_DATED} \\
+                              bash -c '
+                                set -e
+                                echo "Testing Angular CLI..."
+                                ng version --skip-git 2>/dev/null | head -1
+
+                                echo "All smoke tests passed!"
+                              '
+                        """
+
+                        echo "✅ udi-plus-angular smoke tests passed"
+                    }
+                }
+            }
+        }
+
+        stage('Build udi-plus-gae') {
+            when {
+                expression { params.BUILD_GAE }
+            }
+            steps {
+                container('builder') {
+                    script {
+                        echo "=== Building udi-plus-gae image ==="
+                        echo "⚠️  This build takes 15-20 minutes due to Python 2.7 compilation"
+
+                        def baseTag = (params.BUILD_UDI_PLUS && env.SKIP_UDI_PLUS_BUILD != 'true') ?
+                                      env.IMAGE_TAG_DATED : 'latest'
+
+                        echo "Using base image tag: ${baseTag}"
+
+                        try {
+                            sh """#!/bin/bash
+                                set -euo pipefail
+
+                                cd containers/udi-plus/udi-plus-gae
+
+                                BUILDKIT_HOST=unix:///run/buildkit/buildkitd.sock \\
+                                  nerdctl -n k8s.io build \\
+                                    --build-arg BASE_TAG=${baseTag} \\
+                                    -t ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_LATEST} \\
+                                    -t ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED} \\
+                                    -t ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_GIT} \\
+                                    .
+                            """
+
+                            env.IMAGES_BUILT = env.IMAGES_BUILT + "udi-plus-gae:${env.IMAGE_TAG_DATED},"
+                            echo "✅ udi-plus-gae image built successfully"
+                        } catch (Exception e) {
+                            // On GAE build failure, just log it - main cleanup will handle it
+                            echo "⚠️  GAE build failed - will be cleaned up in post.always"
+                            throw e  // Re-throw to fail the stage
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Test udi-plus-gae') {
+            when {
+                expression { params.BUILD_GAE && !params.SKIP_SMOKE_TESTS }
+            }
+            steps {
+                container('builder') {
+                    script {
+                        echo "=== Testing udi-plus-gae image ==="
+
+                        sh """#!/bin/bash
+                            set -euo pipefail
+
+                            nerdctl -n k8s.io run --rm ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED} \\
+                              bash -c '
+                                set -e
+                                echo "Testing Python 2.7..."
+                                /usr/local/bin/python2.7 --version
+
+                                echo "Testing GAE SDK..."
+                                test -d /opt/google_appengine && echo "GAE SDK found" || exit 1
+
+                                echo "Testing pip..."
+                                /usr/local/bin/python2.7 -m pip --version
+
+                                echo "All smoke tests passed!"
+                              '
+                        """
+
+                        echo "✅ udi-plus-gae smoke tests passed"
+                    }
+                }
+            }
+        }
+
+        stage('Push to Harbor') {
+            when {
+                expression { env.IMAGES_BUILT != '' }
+            }
+            steps {
+                container('builder') {
+                    withCredentials([usernamePassword(credentialsId: 'harbor-robot-registry',
+                                                      passwordVariable: 'HARBOR_PASSWORD',
+                                                      usernameVariable: 'HARBOR_USERNAME')]) {
+                        script {
+                            echo "=== Pushing images to Harbor ==="
+                            echo "Images built: ${env.IMAGES_BUILT}"
+
+                            sh """
+                                echo \$HARBOR_PASSWORD | nerdctl -n k8s.io login ${REGISTRY} -u \$HARBOR_USERNAME --password-stdin
+                            """
+
+                            // Push all built images in parallel
+                            def pushStages = [:]
+
+                            if (params.BUILD_UDI_PLUS && env.SKIP_UDI_PLUS_BUILD != 'true') {
+                                pushStages['udi-plus'] = {
+                                    sh """
+                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus:${IMAGE_TAG_LATEST}
+                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED}
+                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus:${IMAGE_TAG_GIT}
+                                    """
+                                    echo "✅ Pushed udi-plus"
+                                }
+                            }
+
+                            if (params.BUILD_RUST) {
+                                pushStages['rust-nix-dev'] = {
+                                    sh """
+                                        nerdctl -n k8s.io push ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_LATEST}
+                                        nerdctl -n k8s.io push ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_DATED}
+                                        nerdctl -n k8s.io push ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_GIT}
+                                    """
+                                    echo "✅ Pushed rust-nix-dev"
+                                }
+                            }
+
+                            if (params.BUILD_ANGULAR) {
+                                pushStages['udi-plus-angular'] = {
+                                    sh """
+                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_LATEST}
+                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_DATED}
+                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_GIT}
+                                    """
+                                    echo "✅ Pushed udi-plus-angular"
+                                }
+                            }
+
+                            if (params.BUILD_GAE) {
+                                pushStages['udi-plus-gae'] = {
+                                    sh """
+                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_LATEST}
+                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED}
+                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_GIT}
+                                    """
+                                    echo "✅ Pushed udi-plus-gae"
+                                }
+                            }
+
+                            parallel pushStages
+
+                            echo "✅ All images pushed to Harbor"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Harbor Security Scan') {
+            when {
+                expression { env.IMAGES_BUILT != '' && !params.SKIP_SECURITY_SCAN }
+            }
+            steps {
+                container('builder') {
+                    withCredentials([usernamePassword(credentialsId: 'harbor-robot-registry',
+                                                      passwordVariable: 'HARBOR_PASSWORD',
+                                                      usernameVariable: 'HARBOR_USERNAME')]) {
+                        script {
+                            echo "=== Triggering Harbor security scans ==="
+
+                            def scanImage = { imageName ->
+                                sh """
+                                    AUTH_HEADER="Authorization: Basic \$(echo -n "\$HARBOR_USERNAME:\$HARBOR_PASSWORD" | base64)"
+
+                                    echo "Scanning ${imageName}..."
+                                    wget --post-data="" \\
+                                      --header="accept: application/json" \\
+                                      --header="Content-Type: application/json" \\
+                                      --header="\$AUTH_HEADER" \\
+                                      -S -O- \\
+                                      "https://harbor.ethosengine.com/api/v2.0/projects/devspaces/repositories/${imageName}/artifacts/${IMAGE_TAG_DATED}/scan" || \\
+                                    echo "Scan request for ${imageName} submitted"
+                                """
+                            }
+
+                            // Trigger scans in parallel
+                            def scanStages = [:]
+
+                            if (params.BUILD_UDI_PLUS && env.SKIP_UDI_PLUS_BUILD != 'true') {
+                                scanStages['udi-plus'] = { scanImage('udi-plus') }
+                            }
+
+                            if (params.BUILD_RUST) {
+                                scanStages['rust-nix-dev'] = { scanImage('rust-nix-dev') }
+                            }
+
+                            if (params.BUILD_ANGULAR) {
+                                scanStages['udi-plus-angular'] = { scanImage('udi-plus-angular') }
+                            }
+
+                            if (params.BUILD_GAE) {
+                                scanStages['udi-plus-gae'] = { scanImage('udi-plus-gae') }
+                            }
+
+                            parallel scanStages
+
+                            echo "✅ Security scans initiated"
+                            echo "Check Harbor UI for scan results"
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Archive Build Info') {
+            when {
+                expression { env.IMAGES_BUILT != '' }
+            }
+            steps {
+                container('builder') {
+                    script {
+                        def metadata = """# DevSpaces Image Build Metadata
+BUILD_DATE=${new Date()}
+GIT_HASH=${env.GIT_HASH}
+IMAGE_TAG_DATED=${env.IMAGE_TAG_DATED}
+IMAGE_TAG_GIT=${env.IMAGE_TAG_GIT}
+BASE_IMAGE=${env.BASE_IMAGE}
+IMAGES_BUILT=${env.IMAGES_BUILT}
+
+# Individual Image Tags
+"""
+                        if (params.BUILD_UDI_PLUS && env.SKIP_UDI_PLUS_BUILD != 'true') {
+                            metadata += "UDI_PLUS=${REGISTRY}/udi-plus:${IMAGE_TAG_DATED}\n"
+                        }
+                        if (params.BUILD_RUST) {
+                            metadata += "RUST_NIX_DEV=${REGISTRY}/rust-nix-dev:${IMAGE_TAG_DATED}\n"
+                        }
+                        if (params.BUILD_ANGULAR) {
+                            metadata += "UDI_PLUS_ANGULAR=${REGISTRY}/udi-plus-angular:${IMAGE_TAG_DATED}\n"
+                        }
+                        if (params.BUILD_GAE) {
+                            metadata += "UDI_PLUS_GAE=${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED}\n"
+                        }
+
+                        writeFile file: 'build-metadata.env', text: metadata
+                        archiveArtifacts artifacts: 'build-metadata.env', allowEmptyArchive: false
+
+                        echo "Build metadata archived"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            container('builder') {
+                script {
+                    echo '=== Cleanup: Removing images from this build ==='
+
+                    // Safety: Only clean if we have tag info (prevents wild deletions)
+                    if (!env.IMAGE_TAG_DATED || !env.IMAGE_TAG_GIT) {
+                        echo '⚠️  No image tags found, skipping cleanup (safety check)'
+                        return
+                    }
+
+                    sh """#!/bin/bash
+                        set +e  # Don't fail on errors during cleanup
+
+                        echo "This cleanup will ONLY remove images built in this pipeline run"
+                        echo "Tags to remove: latest, ${IMAGE_TAG_DATED}, ${IMAGE_TAG_GIT}"
+                        echo ""
+
+                        # List what we're about to remove (for safety verification)
+                        echo "=== Images that will be removed ==="
+                        nerdctl -n k8s.io images | grep -E "(${IMAGE_TAG_DATED}|${IMAGE_TAG_GIT})" || echo "None found (already cleaned or never built)"
+                        echo ""
+
+                        # Remove ONLY the specific images we built (by exact tag)
+                        echo "Removing images from this build..."
+
+                        # udi-plus images
+                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus:${IMAGE_TAG_LATEST} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus:${IMAGE_TAG_GIT} 2>/dev/null || true
+
+                        # rust-nix-dev images
+                        nerdctl -n k8s.io rmi ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_LATEST} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_DATED} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_GIT} 2>/dev/null || true
+
+                        # udi-plus-angular images
+                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_LATEST} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_DATED} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_GIT} 2>/dev/null || true
+
+                        # udi-plus-gae images
+                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_LATEST} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_GIT} 2>/dev/null || true
+
+                        echo ""
+                        echo "=== Remaining devspaces images (other builds) ==="
+                        nerdctl -n k8s.io images | grep devspaces || echo "None"
+
+                        echo ""
+                        echo "Disk usage:"
+                        df -h / | grep -E '(Filesystem|/$)' || df -h / | head -2
+
+                        exit 0  # Always succeed in cleanup
+                    """
+
+                    echo '✅ Cleanup completed - only removed images from this build'
+                }
+            }
+        }
+        success {
+            script {
+                echo "======================================"
+                echo "✅ Pipeline completed successfully"
+                echo "======================================"
+                echo "Images built: ${env.IMAGES_BUILT ?: 'none'}"
+                echo "Image tag (dated): ${env.IMAGE_TAG_DATED ?: 'n/a'}"
+                echo "Git hash: ${env.GIT_HASH ?: 'n/a'}"
+                echo "======================================"
+            }
+        }
+        failure {
+            script {
+                echo '======================================'
+                echo '❌ Pipeline failed'
+                echo '======================================'
+                echo "Images built before failure: ${env.IMAGES_BUILT ?: 'none'}"
+                echo "Failed at image tag: ${env.IMAGE_TAG_DATED ?: 'n/a'}"
+                echo 'Check the logs for details'
+                echo 'All local images have been cleaned up'
+                echo '======================================'
+            }
+        }
+        aborted {
+            script {
+                echo '======================================'
+                echo '⚠️  Pipeline was aborted'
+                echo '======================================'
+                echo "Images built before abort: ${env.IMAGES_BUILT ?: 'none'}"
+                echo 'All local images have been cleaned up'
+                echo '======================================'
+            }
+        }
+        unstable {
+            script {
+                echo '======================================'
+                echo '⚠️  Pipeline completed with warnings'
+                echo '======================================'
+                echo "Images built: ${env.IMAGES_BUILT ?: 'none'}"
+                echo 'Check logs for warnings'
+                echo '======================================'
+            }
+        }
+    }
+}

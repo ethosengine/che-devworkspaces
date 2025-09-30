@@ -1,6 +1,7 @@
 # Legacy Google App Engine Python 2.7 Development Container
 # Layered on top of the udi-plus base image with Java 21 and Claude Code
-FROM harbor.ethosengine.com/devspaces/udi-plus:latest
+ARG BASE_TAG=latest
+FROM harbor.ethosengine.com/devspaces/udi-plus:${BASE_TAG}
 
 USER root
 

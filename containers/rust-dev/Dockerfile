@@ -2,7 +2,8 @@
 # podman build -t harbor.ethosengine.com/devspaces/rust-nix-dev:latest .
 # podman push harbor.ethosengine.com/devspaces/rust-nix-dev:latest
 
-FROM harbor.ethosengine.com/devspaces/udi-plus:latest
+ARG BASE_TAG=latest
+FROM harbor.ethosengine.com/devspaces/udi-plus:${BASE_TAG}
 
 # Install system dependencies and tools
 USER root
