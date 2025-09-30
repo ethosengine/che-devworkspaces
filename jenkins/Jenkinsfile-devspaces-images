@@ -629,51 +629,51 @@ IMAGES_BUILT=${env.IMAGES_BUILT}
                         return
                     }
 
-                    sh """#!/bin/bash
-                        set +e  # Don't fail on errors during cleanup
+                    // Use script block to build the shell command with proper variable substitution
+                    def cleanupScript = """#!/bin/bash
+set +e
 
-                        echo "This cleanup will ONLY remove images built in this pipeline run"
-                        echo "Tags to remove: latest, ${env.IMAGE_TAG_DATED}, ${env.IMAGE_TAG_GIT}"
-                        echo ""
+echo "This cleanup will ONLY remove images built in this pipeline run"
+echo "Tags to remove: latest, ${env.IMAGE_TAG_DATED}, ${env.IMAGE_TAG_GIT}"
+echo ""
 
-                        # List what we're about to remove (for safety verification)
-                        echo "=== Images that will be removed ==="
-                        nerdctl -n k8s.io images | grep -E "(${env.IMAGE_TAG_DATED}|${env.IMAGE_TAG_GIT})" || echo "None found (already cleaned or never built)"
-                        echo ""
+echo "=== Images that will be removed ==="
+nerdctl -n k8s.io images | grep -E "(${env.IMAGE_TAG_DATED}|${env.IMAGE_TAG_GIT})" || echo "None found"
+echo ""
 
-                        # Remove ONLY the specific images we built (by exact tag)
-                        echo "Removing images from this build..."
+echo "Removing images from this build..."
 
-                        # udi-plus images
-                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus:${env.IMAGE_TAG_LATEST} 2>/dev/null || true
-                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus:${env.IMAGE_TAG_DATED} 2>/dev/null || true
-                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus:${env.IMAGE_TAG_GIT} 2>/dev/null || true
+# udi-plus images
+nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus:${env.IMAGE_TAG_LATEST} 2>/dev/null || true
+nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus:${env.IMAGE_TAG_DATED} 2>/dev/null || true
+nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus:${env.IMAGE_TAG_GIT} 2>/dev/null || true
 
-                        # rust-nix-dev images
-                        nerdctl -n k8s.io rmi ${env.REGISTRY}/rust-nix-dev:${env.IMAGE_TAG_LATEST} 2>/dev/null || true
-                        nerdctl -n k8s.io rmi ${env.REGISTRY}/rust-nix-dev:${env.IMAGE_TAG_DATED} 2>/dev/null || true
-                        nerdctl -n k8s.io rmi ${env.REGISTRY}/rust-nix-dev:${env.IMAGE_TAG_GIT} 2>/dev/null || true
+# rust-nix-dev images
+nerdctl -n k8s.io rmi ${env.REGISTRY}/rust-nix-dev:${env.IMAGE_TAG_LATEST} 2>/dev/null || true
+nerdctl -n k8s.io rmi ${env.REGISTRY}/rust-nix-dev:${env.IMAGE_TAG_DATED} 2>/dev/null || true
+nerdctl -n k8s.io rmi ${env.REGISTRY}/rust-nix-dev:${env.IMAGE_TAG_GIT} 2>/dev/null || true
 
-                        # udi-plus-angular images
-                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-angular:${env.IMAGE_TAG_LATEST} 2>/dev/null || true
-                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-angular:${env.IMAGE_TAG_DATED} 2>/dev/null || true
-                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-angular:${env.IMAGE_TAG_GIT} 2>/dev/null || true
+# udi-plus-angular images
+nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-angular:${env.IMAGE_TAG_LATEST} 2>/dev/null || true
+nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-angular:${env.IMAGE_TAG_DATED} 2>/dev/null || true
+nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-angular:${env.IMAGE_TAG_GIT} 2>/dev/null || true
 
-                        # udi-plus-gae images
-                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-gae:${env.IMAGE_TAG_LATEST} 2>/dev/null || true
-                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-gae:${env.IMAGE_TAG_DATED} 2>/dev/null || true
-                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-gae:${env.IMAGE_TAG_GIT} 2>/dev/null || true
+# udi-plus-gae images
+nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-gae:${env.IMAGE_TAG_LATEST} 2>/dev/null || true
+nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-gae:${env.IMAGE_TAG_DATED} 2>/dev/null || true
+nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-gae:${env.IMAGE_TAG_GIT} 2>/dev/null || true
 
-                        echo ""
-                        echo "=== Remaining devspaces images (other builds) ==="
-                        nerdctl -n k8s.io images | grep devspaces || echo "None"
+echo ""
+echo "=== Remaining devspaces images (other builds) ==="
+nerdctl -n k8s.io images | grep devspaces || echo "None"
 
-                        echo ""
-                        echo "Disk usage:"
-                        df -h / | grep -E '(Filesystem|/$)' || df -h / | head -2
+echo ""
+echo "Disk usage:"
+df -h / | head -2
 
-                        exit 0  # Always succeed in cleanup
-                    """
+exit 0
+"""
+                    sh cleanupScript
 
                     echo '✅ Cleanup completed - only removed images from this build'
                 }
