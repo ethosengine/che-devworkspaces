@@ -233,6 +233,9 @@ spec:
 
                             # Run smoke tests with native snapshotter to avoid overlay mount issues
                             echo "Running smoke tests..."
+                            echo "Testing basic container execution..."
+                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED} echo "Container started successfully"
+                            echo "Running full smoke tests..."
                             nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED} bash -c 'set -e && echo "Testing Claude Code..." && (claude --version || echo "Claude needs auth (expected)") && echo "Testing Java..." && java -version && echo "Testing Node..." && node --version && npm --version && echo "Testing SonarQube MCP..." && test -f /opt/mcp/sonarqube-mcp.jar && echo "SonarQube MCP JAR found" && echo "All smoke tests passed!"'
                         """
 
