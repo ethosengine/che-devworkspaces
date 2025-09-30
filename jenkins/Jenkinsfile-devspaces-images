@@ -179,8 +179,15 @@ spec:
                         sh """#!/bin/bash
                             set -euo pipefail
 
-                            cd containers/udi-plus
+                            # Verify BuildKit
+                            buildctl --addr unix:///run/buildkit/buildkitd.sock debug workers > /dev/null
 
+                            # Create build context
+                            mkdir -p /tmp/build-context/udi-plus
+                            cp -r containers/udi-plus/* /tmp/build-context/udi-plus/
+
+                            # Build image
+                            cd /tmp/build-context/udi-plus
                             BUILDKIT_HOST=unix:///run/buildkit/buildkitd.sock \\
                               nerdctl -n k8s.io build \\
                                 --no-cache \\
@@ -258,8 +265,15 @@ spec:
                         sh """#!/bin/bash
                             set -euo pipefail
 
-                            cd containers/rust-dev
+                            # Verify BuildKit
+                            buildctl --addr unix:///run/buildkit/buildkitd.sock debug workers > /dev/null
 
+                            # Create build context
+                            mkdir -p /tmp/build-context/rust-dev
+                            cp -r containers/rust-dev/* /tmp/build-context/rust-dev/
+
+                            # Build image
+                            cd /tmp/build-context/rust-dev
                             BUILDKIT_HOST=unix:///run/buildkit/buildkitd.sock \\
                               nerdctl -n k8s.io build \\
                                 --build-arg BASE_TAG=${baseTag} \\
@@ -327,8 +341,15 @@ spec:
                         sh """#!/bin/bash
                             set -euo pipefail
 
-                            cd containers/udi-plus/udi-plus-angular
+                            # Verify BuildKit
+                            buildctl --addr unix:///run/buildkit/buildkitd.sock debug workers > /dev/null
 
+                            # Create build context
+                            mkdir -p /tmp/build-context/udi-plus-angular
+                            cp -r containers/udi-plus/udi-plus-angular/* /tmp/build-context/udi-plus-angular/
+
+                            # Build image
+                            cd /tmp/build-context/udi-plus-angular
                             BUILDKIT_HOST=unix:///run/buildkit/buildkitd.sock \\
                               nerdctl -n k8s.io build \\
                                 --build-arg BASE_TAG=${baseTag} \\
@@ -388,28 +409,29 @@ spec:
 
                         echo "Using base image tag: ${baseTag}"
 
-                        try {
-                            sh """#!/bin/bash
-                                set -euo pipefail
+                        sh """#!/bin/bash
+                            set -euo pipefail
 
-                                cd containers/udi-plus/udi-plus-gae
+                            # Verify BuildKit
+                            buildctl --addr unix:///run/buildkit/buildkitd.sock debug workers > /dev/null
 
-                                BUILDKIT_HOST=unix:///run/buildkit/buildkitd.sock \\
-                                  nerdctl -n k8s.io build \\
-                                    --build-arg BASE_TAG=${baseTag} \\
-                                    -t ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_LATEST} \\
-                                    -t ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED} \\
-                                    -t ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_GIT} \\
-                                    .
-                            """
+                            # Create build context
+                            mkdir -p /tmp/build-context/udi-plus-gae
+                            cp -r containers/udi-plus/udi-plus-gae/* /tmp/build-context/udi-plus-gae/
 
-                            env.IMAGES_BUILT = env.IMAGES_BUILT + "udi-plus-gae:${env.IMAGE_TAG_DATED},"
-                            echo "✅ udi-plus-gae image built successfully"
-                        } catch (Exception e) {
-                            // On GAE build failure, just log it - main cleanup will handle it
-                            echo "⚠️  GAE build failed - will be cleaned up in post.always"
-                            throw e  // Re-throw to fail the stage
-                        }
+                            # Build image
+                            cd /tmp/build-context/udi-plus-gae
+                            BUILDKIT_HOST=unix:///run/buildkit/buildkitd.sock \\
+                              nerdctl -n k8s.io build \\
+                                --build-arg BASE_TAG=${baseTag} \\
+                                -t ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_LATEST} \\
+                                -t ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED} \\
+                                -t ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_GIT} \\
+                                .
+                        """
+
+                        env.IMAGES_BUILT = env.IMAGES_BUILT + "udi-plus-gae:${env.IMAGE_TAG_DATED},"
+                        echo "✅ udi-plus-gae image built successfully"
                     }
                 }
             }
@@ -462,9 +484,9 @@ spec:
                             echo "=== Pushing images to Harbor ==="
                             echo "Images built: ${env.IMAGES_BUILT}"
 
-                            sh """
-                                echo \$HARBOR_PASSWORD | nerdctl -n k8s.io login ${REGISTRY} -u \$HARBOR_USERNAME --password-stdin
-                            """
+                            sh '''
+                                echo $HARBOR_PASSWORD | nerdctl -n k8s.io login harbor.ethosengine.com/devspaces -u $HARBOR_USERNAME --password-stdin
+                            '''
 
                             // Push all built images in parallel
                             def pushStages = [:]
@@ -621,63 +643,60 @@ IMAGES_BUILT=${env.IMAGES_BUILT}
 
     post {
         always {
-            container('builder') {
-                script {
-                    echo '=== Cleanup: Removing images from this build ==='
+            script {
+                container('builder') {
+                    script {
+                        echo '=== Cleanup: Removing images from this build ==='
 
-                    // Safety: Only clean if we have tag info (prevents wild deletions)
-                    if (!env.IMAGE_TAG_DATED || !env.IMAGE_TAG_GIT) {
-                        echo '⚠️  No image tags found, skipping cleanup (safety check)'
-                        return
+                        // Safety: Only clean if we have tag info (prevents wild deletions)
+                        if (!env.IMAGE_TAG_DATED || !env.IMAGE_TAG_GIT) {
+                            echo '⚠️  No image tags found, skipping cleanup (safety check)'
+                            return
+                        }
+
+                        echo "This cleanup will ONLY remove images built in this pipeline run"
+                        echo "Tags to remove: latest, ${env.IMAGE_TAG_DATED}, ${env.IMAGE_TAG_GIT}"
+
+                        sh """
+                            set +e
+
+                            echo "=== Images that will be removed ==="
+                            nerdctl -n k8s.io images | grep -E "(${IMAGE_TAG_DATED}|${IMAGE_TAG_GIT})" || echo "None found"
+                            echo ""
+
+                            echo "Removing images from this build..."
+
+                            # udi-plus images
+                            nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus:${IMAGE_TAG_LATEST} 2>/dev/null || true
+                            nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED} 2>/dev/null || true
+                            nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus:${IMAGE_TAG_GIT} 2>/dev/null || true
+
+                            # rust-nix-dev images
+                            nerdctl -n k8s.io rmi ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_LATEST} 2>/dev/null || true
+                            nerdctl -n k8s.io rmi ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_DATED} 2>/dev/null || true
+                            nerdctl -n k8s.io rmi ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_GIT} 2>/dev/null || true
+
+                            # udi-plus-angular images
+                            nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_LATEST} 2>/dev/null || true
+                            nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_DATED} 2>/dev/null || true
+                            nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_GIT} 2>/dev/null || true
+
+                            # udi-plus-gae images
+                            nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_LATEST} 2>/dev/null || true
+                            nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED} 2>/dev/null || true
+                            nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_GIT} 2>/dev/null || true
+
+                            echo ""
+                            echo "=== Remaining devspaces images (other builds) ==="
+                            nerdctl -n k8s.io images | grep devspaces || echo "None"
+
+                            echo ""
+                            echo "Disk usage:"
+                            df -h / | head -2
+                        """
+
+                        echo '✅ Cleanup completed - only removed images from this build'
                     }
-
-                    // Use script block to build the shell command with proper variable substitution
-                    def cleanupScript = """#!/bin/bash
-set +e
-
-echo "This cleanup will ONLY remove images built in this pipeline run"
-echo "Tags to remove: latest, ${env.IMAGE_TAG_DATED}, ${env.IMAGE_TAG_GIT}"
-echo ""
-
-echo "=== Images that will be removed ==="
-nerdctl -n k8s.io images | grep -E "(${env.IMAGE_TAG_DATED}|${env.IMAGE_TAG_GIT})" || echo "None found"
-echo ""
-
-echo "Removing images from this build..."
-
-# udi-plus images
-nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus:${env.IMAGE_TAG_LATEST} 2>/dev/null || true
-nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus:${env.IMAGE_TAG_DATED} 2>/dev/null || true
-nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus:${env.IMAGE_TAG_GIT} 2>/dev/null || true
-
-# rust-nix-dev images
-nerdctl -n k8s.io rmi ${env.REGISTRY}/rust-nix-dev:${env.IMAGE_TAG_LATEST} 2>/dev/null || true
-nerdctl -n k8s.io rmi ${env.REGISTRY}/rust-nix-dev:${env.IMAGE_TAG_DATED} 2>/dev/null || true
-nerdctl -n k8s.io rmi ${env.REGISTRY}/rust-nix-dev:${env.IMAGE_TAG_GIT} 2>/dev/null || true
-
-# udi-plus-angular images
-nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-angular:${env.IMAGE_TAG_LATEST} 2>/dev/null || true
-nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-angular:${env.IMAGE_TAG_DATED} 2>/dev/null || true
-nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-angular:${env.IMAGE_TAG_GIT} 2>/dev/null || true
-
-# udi-plus-gae images
-nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-gae:${env.IMAGE_TAG_LATEST} 2>/dev/null || true
-nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-gae:${env.IMAGE_TAG_DATED} 2>/dev/null || true
-nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-gae:${env.IMAGE_TAG_GIT} 2>/dev/null || true
-
-echo ""
-echo "=== Remaining devspaces images (other builds) ==="
-nerdctl -n k8s.io images | grep devspaces || echo "None"
-
-echo ""
-echo "Disk usage:"
-df -h / | head -2
-
-exit 0
-"""
-                    sh cleanupScript
-
-                    echo '✅ Cleanup completed - only removed images from this build'
                 }
             }
         }
