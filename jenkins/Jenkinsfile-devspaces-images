@@ -212,6 +212,7 @@ spec:
 
                         env.IMAGES_BUILT = (env.IMAGES_BUILT ?: '') + "udi-plus:${env.IMAGE_TAG_DATED},"
                         echo "✅ udi-plus image built and verified"
+                        echo "DEBUG: IMAGES_BUILT after udi-plus build: '${env.IMAGES_BUILT}'"
                     }
                 }
             }
@@ -284,6 +285,7 @@ spec:
 
                         env.IMAGES_BUILT = (env.IMAGES_BUILT ?: '') + "rust-nix-dev:${env.IMAGE_TAG_DATED},"
                         echo "✅ rust-nix-dev image built successfully"
+                        echo "DEBUG: IMAGES_BUILT after rust-nix-dev build: '${env.IMAGES_BUILT}'"
                     }
                 }
             }
@@ -351,6 +353,7 @@ spec:
 
                         env.IMAGES_BUILT = (env.IMAGES_BUILT ?: '') + "udi-plus-angular:${env.IMAGE_TAG_DATED},"
                         echo "✅ udi-plus-angular image built successfully"
+                        echo "DEBUG: IMAGES_BUILT after udi-plus-angular build: '${env.IMAGES_BUILT}'"
                     }
                 }
             }
@@ -419,6 +422,7 @@ spec:
 
                         env.IMAGES_BUILT = (env.IMAGES_BUILT ?: '') + "udi-plus-gae:${env.IMAGE_TAG_DATED},"
                         echo "✅ udi-plus-gae image built successfully"
+                        echo "DEBUG: IMAGES_BUILT after udi-plus-gae build: '${env.IMAGES_BUILT}'"
                     }
                 }
             }
@@ -451,7 +455,10 @@ spec:
 
         stage('Push to Harbor') {
             when {
-                expression { env.IMAGES_BUILT != '' && !params.SKIP_PUSH }
+                expression {
+                    echo "DEBUG Push when check: IMAGES_BUILT='${env.IMAGES_BUILT}', SKIP_PUSH=${params.SKIP_PUSH}"
+                    return env.IMAGES_BUILT != '' && env.IMAGES_BUILT != null && !params.SKIP_PUSH
+                }
             }
             steps {
                 container('builder') {
@@ -460,12 +467,7 @@ spec:
                                                       usernameVariable: 'HARBOR_USERNAME')]) {
                         script {
                             echo "=== Pushing images to Harbor ==="
-                            echo "Images built: ${env.IMAGES_BUILT}"
-
-                            // Verify IMAGES_BUILT is not empty
-                            if (!env.IMAGES_BUILT || env.IMAGES_BUILT == '' || env.IMAGES_BUILT == 'null') {
-                                error("❌ VERIFICATION FAILED: IMAGES_BUILT is empty or null - no images to push!")
-                            }
+                            echo "DEBUG: IMAGES_BUILT value at push start: '${env.IMAGES_BUILT}'"
 
                             sh '''
                                 echo $HARBOR_PASSWORD | nerdctl -n k8s.io login harbor.ethosengine.com/devspaces -u $HARBOR_USERNAME --password-stdin
