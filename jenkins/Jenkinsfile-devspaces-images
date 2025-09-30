@@ -63,7 +63,7 @@ spec:
                      description: 'Build udi-plus-angular image')
         booleanParam(name: 'BUILD_GAE', defaultValue: true,
                      description: 'Build udi-plus-gae image')
-        booleanParam(name: 'FORCE_BUILD', defaultValue: false,
+        booleanParam(name: 'FORCE_BUILD', defaultValue: true,
                      description: 'Force rebuild even if no updates to base image')
         booleanParam(name: 'SKIP_SECURITY_SCAN', defaultValue: false,
                      description: 'Skip Harbor security scanning')
