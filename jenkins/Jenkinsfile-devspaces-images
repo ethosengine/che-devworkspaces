@@ -633,36 +633,36 @@ IMAGES_BUILT=${env.IMAGES_BUILT}
                         set +e  # Don't fail on errors during cleanup
 
                         echo "This cleanup will ONLY remove images built in this pipeline run"
-                        echo "Tags to remove: latest, ${IMAGE_TAG_DATED}, ${IMAGE_TAG_GIT}"
+                        echo "Tags to remove: latest, ${env.IMAGE_TAG_DATED}, ${env.IMAGE_TAG_GIT}"
                         echo ""
 
                         # List what we're about to remove (for safety verification)
                         echo "=== Images that will be removed ==="
-                        nerdctl -n k8s.io images | grep -E "(${IMAGE_TAG_DATED}|${IMAGE_TAG_GIT})" || echo "None found (already cleaned or never built)"
+                        nerdctl -n k8s.io images | grep -E "(${env.IMAGE_TAG_DATED}|${env.IMAGE_TAG_GIT})" || echo "None found (already cleaned or never built)"
                         echo ""
 
                         # Remove ONLY the specific images we built (by exact tag)
                         echo "Removing images from this build..."
 
                         # udi-plus images
-                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus:${IMAGE_TAG_LATEST} 2>/dev/null || true
-                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED} 2>/dev/null || true
-                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus:${IMAGE_TAG_GIT} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus:${env.IMAGE_TAG_LATEST} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus:${env.IMAGE_TAG_DATED} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus:${env.IMAGE_TAG_GIT} 2>/dev/null || true
 
                         # rust-nix-dev images
-                        nerdctl -n k8s.io rmi ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_LATEST} 2>/dev/null || true
-                        nerdctl -n k8s.io rmi ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_DATED} 2>/dev/null || true
-                        nerdctl -n k8s.io rmi ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_GIT} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${env.REGISTRY}/rust-nix-dev:${env.IMAGE_TAG_LATEST} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${env.REGISTRY}/rust-nix-dev:${env.IMAGE_TAG_DATED} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${env.REGISTRY}/rust-nix-dev:${env.IMAGE_TAG_GIT} 2>/dev/null || true
 
                         # udi-plus-angular images
-                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_LATEST} 2>/dev/null || true
-                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_DATED} 2>/dev/null || true
-                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_GIT} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-angular:${env.IMAGE_TAG_LATEST} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-angular:${env.IMAGE_TAG_DATED} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-angular:${env.IMAGE_TAG_GIT} 2>/dev/null || true
 
                         # udi-plus-gae images
-                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_LATEST} 2>/dev/null || true
-                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED} 2>/dev/null || true
-                        nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_GIT} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-gae:${env.IMAGE_TAG_LATEST} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-gae:${env.IMAGE_TAG_DATED} 2>/dev/null || true
+                        nerdctl -n k8s.io rmi ${env.REGISTRY}/udi-plus-gae:${env.IMAGE_TAG_GIT} 2>/dev/null || true
 
                         echo ""
                         echo "=== Remaining devspaces images (other builds) ==="
