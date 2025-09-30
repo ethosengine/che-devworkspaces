@@ -65,6 +65,8 @@ spec:
                      description: 'Build udi-plus-gae image')
         booleanParam(name: 'FORCE_BUILD', defaultValue: true,
                      description: 'Force rebuild even if no updates to base image')
+        booleanParam(name: 'SKIP_PUSH', defaultValue: false,
+                     description: 'Skip pushing images to Harbor (for testing builds only)')
         booleanParam(name: 'SKIP_SECURITY_SCAN', defaultValue: false,
                      description: 'Skip Harbor security scanning')
         booleanParam(name: 'SKIP_SMOKE_TESTS', defaultValue: false,
@@ -155,8 +157,11 @@ spec:
                                 env.SKIP_UDI_PLUS_BUILD = 'false'
                             }
                         } else {
+                            echo "DEBUG: Skipping base image check (BUILD_UDI_PLUS=${params.BUILD_UDI_PLUS}, FORCE_BUILD=${params.FORCE_BUILD})"
                             env.SKIP_UDI_PLUS_BUILD = 'false'
                         }
+
+                        echo "DEBUG: Final SKIP_UDI_PLUS_BUILD = ${env.SKIP_UDI_PLUS_BUILD}"
 
                         // Verify BuildKit
                         sh 'buildctl --addr unix:///run/buildkit/buildkitd.sock debug workers'
@@ -167,8 +172,10 @@ spec:
 
         stage('Build udi-plus') {
             when {
+                beforeAgent true
                 expression {
-                    params.BUILD_UDI_PLUS && env.SKIP_UDI_PLUS_BUILD != 'true'
+                    echo "DEBUG Build udi-plus when: BUILD_UDI_PLUS=${params.BUILD_UDI_PLUS}, SKIP_UDI_PLUS_BUILD=${env.SKIP_UDI_PLUS_BUILD}"
+                    return params.BUILD_UDI_PLUS && env.SKIP_UDI_PLUS_BUILD != 'true'
                 }
             }
             steps {
@@ -220,8 +227,13 @@ spec:
                         sh """#!/bin/bash
                             set -euo pipefail
 
-                            # Run smoke tests
-                            nerdctl -n k8s.io run --rm ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED} \\
+                            # Verify image exists
+                            echo "Verifying image exists..."
+                            nerdctl -n k8s.io images | grep "${REGISTRY}/udi-plus" | grep "${IMAGE_TAG_DATED}"
+
+                            # Run smoke tests with native snapshotter to avoid overlay mount issues
+                            echo "Running smoke tests..."
+                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED} \\
                               bash -c '
                                 set -e
                                 echo "Testing Claude Code..."
@@ -302,7 +314,13 @@ spec:
                         sh """#!/bin/bash
                             set -euo pipefail
 
-                            nerdctl -n k8s.io run --rm ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_DATED} \\
+                            # Verify image exists
+                            echo "Verifying image exists..."
+                            nerdctl -n k8s.io images | grep "${REGISTRY}/rust-nix-dev" | grep "${IMAGE_TAG_DATED}"
+
+                            # Run smoke tests with native snapshotter
+                            echo "Running smoke tests..."
+                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_DATED} \\
                               bash -c '
                                 set -e
                                 echo "Testing Nix wrapper..."
@@ -378,7 +396,13 @@ spec:
                         sh """#!/bin/bash
                             set -euo pipefail
 
-                            nerdctl -n k8s.io run --rm ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_DATED} \\
+                            # Verify image exists
+                            echo "Verifying image exists..."
+                            nerdctl -n k8s.io images | grep "${REGISTRY}/udi-plus-angular" | grep "${IMAGE_TAG_DATED}"
+
+                            # Run smoke tests with native snapshotter
+                            echo "Running smoke tests..."
+                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_DATED} \\
                               bash -c '
                                 set -e
                                 echo "Testing Angular CLI..."
@@ -449,7 +473,13 @@ spec:
                         sh """#!/bin/bash
                             set -euo pipefail
 
-                            nerdctl -n k8s.io run --rm ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED} \\
+                            # Verify image exists
+                            echo "Verifying image exists..."
+                            nerdctl -n k8s.io images | grep "${REGISTRY}/udi-plus-gae" | grep "${IMAGE_TAG_DATED}"
+
+                            # Run smoke tests with native snapshotter
+                            echo "Running smoke tests..."
+                            nerdctl -n k8s.io run --rm --snapshotter=native ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED} \\
                               bash -c '
                                 set -e
                                 echo "Testing Python 2.7..."
@@ -473,7 +503,7 @@ spec:
 
         stage('Push to Harbor') {
             when {
-                expression { env.IMAGES_BUILT != '' }
+                expression { env.IMAGES_BUILT != '' && !params.SKIP_PUSH }
             }
             steps {
                 container('builder') {
