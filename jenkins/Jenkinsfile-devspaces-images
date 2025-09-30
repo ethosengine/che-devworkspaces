@@ -128,23 +128,25 @@ spec:
                         if (params.BUILD_UDI_PLUS && !params.FORCE_BUILD) {
                             echo "Checking for updates to base image: ${env.BASE_IMAGE}"
 
-                            def currentDigest = sh(
-                                script: "nerdctl -n k8s.io inspect ${env.BASE_IMAGE} --format '{{.Digest}}' 2>/dev/null || echo 'none'",
+                            // Get current image ID (if exists)
+                            def currentImageId = sh(
+                                script: "nerdctl -n k8s.io images -q ${env.BASE_IMAGE} 2>/dev/null || echo 'none'",
                                 returnStdout: true
                             ).trim()
 
-                            echo "Current digest: ${currentDigest}"
+                            echo "Current image ID: ${currentImageId}"
 
                             sh "nerdctl -n k8s.io pull ${env.BASE_IMAGE}"
 
-                            def newDigest = sh(
-                                script: "nerdctl -n k8s.io inspect ${env.BASE_IMAGE} --format '{{.Digest}}'",
+                            // Get new image ID after pull
+                            def newImageId = sh(
+                                script: "nerdctl -n k8s.io images -q ${env.BASE_IMAGE}",
                                 returnStdout: true
                             ).trim()
 
-                            echo "New digest: ${newDigest}"
+                            echo "New image ID: ${newImageId}"
 
-                            if (currentDigest == newDigest && currentDigest != 'none') {
+                            if (currentImageId == newImageId && currentImageId != 'none') {
                                 echo "⚠️  No updates to base image detected"
                                 echo "Set FORCE_BUILD=true to rebuild anyway"
                                 env.SKIP_UDI_PLUS_BUILD = 'true'
@@ -467,7 +469,8 @@ spec:
                             // Push all built images in parallel
                             def pushStages = [:]
 
-                            if (params.BUILD_UDI_PLUS && env.SKIP_UDI_PLUS_BUILD != 'true') {
+                            // Only push if image was actually built (check IMAGES_BUILT contains it)
+                            if (env.IMAGES_BUILT.contains('udi-plus:')) {
                                 pushStages['udi-plus'] = {
                                     sh """
                                         nerdctl -n k8s.io push ${REGISTRY}/udi-plus:${IMAGE_TAG_LATEST}
@@ -478,7 +481,7 @@ spec:
                                 }
                             }
 
-                            if (params.BUILD_RUST) {
+                            if (env.IMAGES_BUILT.contains('rust-nix-dev:')) {
                                 pushStages['rust-nix-dev'] = {
                                     sh """
                                         nerdctl -n k8s.io push ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_LATEST}
@@ -489,7 +492,7 @@ spec:
                                 }
                             }
 
-                            if (params.BUILD_ANGULAR) {
+                            if (env.IMAGES_BUILT.contains('udi-plus-angular:')) {
                                 pushStages['udi-plus-angular'] = {
                                     sh """
                                         nerdctl -n k8s.io push ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_LATEST}
@@ -500,7 +503,7 @@ spec:
                                 }
                             }
 
-                            if (params.BUILD_GAE) {
+                            if (env.IMAGES_BUILT.contains('udi-plus-gae:')) {
                                 pushStages['udi-plus-gae'] = {
                                     sh """
                                         nerdctl -n k8s.io push ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_LATEST}
@@ -547,22 +550,22 @@ spec:
                                 """
                             }
 
-                            // Trigger scans in parallel
+                            // Trigger scans in parallel (only for images that were pushed)
                             def scanStages = [:]
 
-                            if (params.BUILD_UDI_PLUS && env.SKIP_UDI_PLUS_BUILD != 'true') {
+                            if (env.IMAGES_BUILT.contains('udi-plus:')) {
                                 scanStages['udi-plus'] = { scanImage('udi-plus') }
                             }
 
-                            if (params.BUILD_RUST) {
+                            if (env.IMAGES_BUILT.contains('rust-nix-dev:')) {
                                 scanStages['rust-nix-dev'] = { scanImage('rust-nix-dev') }
                             }
 
-                            if (params.BUILD_ANGULAR) {
+                            if (env.IMAGES_BUILT.contains('udi-plus-angular:')) {
                                 scanStages['udi-plus-angular'] = { scanImage('udi-plus-angular') }
                             }
 
-                            if (params.BUILD_GAE) {
+                            if (env.IMAGES_BUILT.contains('udi-plus-gae:')) {
                                 scanStages['udi-plus-gae'] = { scanImage('udi-plus-gae') }
                             }
 
