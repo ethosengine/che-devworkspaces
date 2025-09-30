@@ -204,7 +204,7 @@ spec:
                                 .
                         """
 
-                        env.IMAGES_BUILT = env.IMAGES_BUILT + "udi-plus:${env.IMAGE_TAG_DATED},"
+                        env.IMAGES_BUILT = (env.IMAGES_BUILT ?: '') + "udi-plus:${env.IMAGE_TAG_DATED},"
                         echo "✅ udi-plus image built successfully"
                     }
                 }
@@ -276,7 +276,7 @@ spec:
                                 .
                         """
 
-                        env.IMAGES_BUILT = env.IMAGES_BUILT + "rust-nix-dev:${env.IMAGE_TAG_DATED},"
+                        env.IMAGES_BUILT = (env.IMAGES_BUILT ?: '') + "rust-nix-dev:${env.IMAGE_TAG_DATED},"
                         echo "✅ rust-nix-dev image built successfully"
                     }
                 }
@@ -343,7 +343,7 @@ spec:
                                 .
                         """
 
-                        env.IMAGES_BUILT = env.IMAGES_BUILT + "udi-plus-angular:${env.IMAGE_TAG_DATED},"
+                        env.IMAGES_BUILT = (env.IMAGES_BUILT ?: '') + "udi-plus-angular:${env.IMAGE_TAG_DATED},"
                         echo "✅ udi-plus-angular image built successfully"
                     }
                 }
@@ -411,7 +411,7 @@ spec:
                                 .
                         """
 
-                        env.IMAGES_BUILT = env.IMAGES_BUILT + "udi-plus-gae:${env.IMAGE_TAG_DATED},"
+                        env.IMAGES_BUILT = (env.IMAGES_BUILT ?: '') + "udi-plus-gae:${env.IMAGE_TAG_DATED},"
                         echo "✅ udi-plus-gae image built successfully"
                     }
                 }
