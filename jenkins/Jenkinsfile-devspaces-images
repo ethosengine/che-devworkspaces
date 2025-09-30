@@ -181,7 +181,6 @@ spec:
 
                             BUILDKIT_HOST=unix:///run/buildkit/buildkitd.sock \\
                               nerdctl -n k8s.io build \\
-                                --pull \\
                                 --no-cache \\
                                 -t ${REGISTRY}/udi-plus:${IMAGE_TAG_LATEST} \\
                                 -t ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED} \\
