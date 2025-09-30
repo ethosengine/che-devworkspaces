@@ -471,62 +471,48 @@ spec:
                                 echo $HARBOR_PASSWORD | nerdctl -n k8s.io login harbor.ethosengine.com/devspaces -u $HARBOR_USERNAME --password-stdin
                             '''
 
-                            // Push all built images in parallel
-                            def pushStages = [:]
-
-                            // Only push if image was actually built (check IMAGES_BUILT contains it)
+                            // Push all images sequentially
                             if (env.IMAGES_BUILT && env.IMAGES_BUILT.contains('udi-plus:')) {
-                                pushStages['udi-plus'] = {
-                                    sh """
-                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus:${IMAGE_TAG_LATEST}
-                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED}
-                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus:${IMAGE_TAG_GIT}
-                                    """
-                                    echo "✅ Pushed udi-plus"
-                                }
+                                echo "Pushing udi-plus..."
+                                sh """
+                                    nerdctl -n k8s.io push ${REGISTRY}/udi-plus:${IMAGE_TAG_LATEST}
+                                    nerdctl -n k8s.io push ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED}
+                                    nerdctl -n k8s.io push ${REGISTRY}/udi-plus:${IMAGE_TAG_GIT}
+                                """
+                                echo "✅ Pushed udi-plus"
                             }
 
                             if (env.IMAGES_BUILT && env.IMAGES_BUILT.contains('rust-nix-dev:')) {
-                                pushStages['rust-nix-dev'] = {
-                                    sh """
-                                        nerdctl -n k8s.io push ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_LATEST}
-                                        nerdctl -n k8s.io push ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_DATED}
-                                        nerdctl -n k8s.io push ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_GIT}
-                                    """
-                                    echo "✅ Pushed rust-nix-dev"
-                                }
+                                echo "Pushing rust-nix-dev..."
+                                sh """
+                                    nerdctl -n k8s.io push ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_LATEST}
+                                    nerdctl -n k8s.io push ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_DATED}
+                                    nerdctl -n k8s.io push ${REGISTRY}/rust-nix-dev:${IMAGE_TAG_GIT}
+                                """
+                                echo "✅ Pushed rust-nix-dev"
                             }
 
                             if (env.IMAGES_BUILT && env.IMAGES_BUILT.contains('udi-plus-angular:')) {
-                                pushStages['udi-plus-angular'] = {
-                                    sh """
-                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_LATEST}
-                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_DATED}
-                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_GIT}
-                                    """
-                                    echo "✅ Pushed udi-plus-angular"
-                                }
+                                echo "Pushing udi-plus-angular..."
+                                sh """
+                                    nerdctl -n k8s.io push ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_LATEST}
+                                    nerdctl -n k8s.io push ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_DATED}
+                                    nerdctl -n k8s.io push ${REGISTRY}/udi-plus-angular:${IMAGE_TAG_GIT}
+                                """
+                                echo "✅ Pushed udi-plus-angular"
                             }
 
                             if (env.IMAGES_BUILT && env.IMAGES_BUILT.contains('udi-plus-gae:')) {
-                                pushStages['udi-plus-gae'] = {
-                                    sh """
-                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_LATEST}
-                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED}
-                                        nerdctl -n k8s.io push ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_GIT}
-                                    """
-                                    echo "✅ Pushed udi-plus-gae"
-                                }
+                                echo "Pushing udi-plus-gae..."
+                                sh """
+                                    nerdctl -n k8s.io push ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_LATEST}
+                                    nerdctl -n k8s.io push ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_DATED}
+                                    nerdctl -n k8s.io push ${REGISTRY}/udi-plus-gae:${IMAGE_TAG_GIT}
+                                """
+                                echo "✅ Pushed udi-plus-gae"
                             }
 
-                            // Verify we have stages to push
-                            if (pushStages.isEmpty()) {
-                                error("❌ VERIFICATION FAILED: No push stages created despite IMAGES_BUILT being set!")
-                            }
-
-                            parallel pushStages
-
-                            echo "✅ All images pushed to Harbor (${pushStages.size()} images)"
+                            echo "✅ All images pushed to Harbor"
                         }
                     }
                 }
@@ -545,41 +531,66 @@ spec:
                         script {
                             echo "=== Triggering Harbor security scans ==="
 
-                            def scanImage = { imageName ->
+                            // Trigger scans sequentially (only for images that were pushed)
+                            if (env.IMAGES_BUILT && env.IMAGES_BUILT.contains('udi-plus:')) {
+                                echo "Scanning udi-plus..."
                                 sh """
                                     AUTH_HEADER="Authorization: Basic \$(echo -n "\$HARBOR_USERNAME:\$HARBOR_PASSWORD" | base64)"
 
-                                    echo "Scanning ${imageName}..."
                                     wget --post-data="" \\
                                       --header="accept: application/json" \\
                                       --header="Content-Type: application/json" \\
                                       --header="\$AUTH_HEADER" \\
                                       -S -O- \\
-                                      "https://harbor.ethosengine.com/api/v2.0/projects/devspaces/repositories/${imageName}/artifacts/${IMAGE_TAG_DATED}/scan" || \\
-                                    echo "Scan request for ${imageName} submitted"
+                                      "https://harbor.ethosengine.com/api/v2.0/projects/devspaces/repositories/udi-plus/artifacts/${IMAGE_TAG_DATED}/scan" || \\
+                                    echo "Scan request for udi-plus submitted"
                                 """
                             }
 
-                            // Trigger scans in parallel (only for images that were pushed)
-                            def scanStages = [:]
-
-                            if (env.IMAGES_BUILT && env.IMAGES_BUILT.contains('udi-plus:')) {
-                                scanStages['udi-plus'] = { scanImage('udi-plus') }
-                            }
-
                             if (env.IMAGES_BUILT && env.IMAGES_BUILT.contains('rust-nix-dev:')) {
-                                scanStages['rust-nix-dev'] = { scanImage('rust-nix-dev') }
+                                echo "Scanning rust-nix-dev..."
+                                sh """
+                                    AUTH_HEADER="Authorization: Basic \$(echo -n "\$HARBOR_USERNAME:\$HARBOR_PASSWORD" | base64)"
+
+                                    wget --post-data="" \\
+                                      --header="accept: application/json" \\
+                                      --header="Content-Type: application/json" \\
+                                      --header="\$AUTH_HEADER" \\
+                                      -S -O- \\
+                                      "https://harbor.ethosengine.com/api/v2.0/projects/devspaces/repositories/rust-nix-dev/artifacts/${IMAGE_TAG_DATED}/scan" || \\
+                                    echo "Scan request for rust-nix-dev submitted"
+                                """
                             }
 
                             if (env.IMAGES_BUILT && env.IMAGES_BUILT.contains('udi-plus-angular:')) {
-                                scanStages['udi-plus-angular'] = { scanImage('udi-plus-angular') }
+                                echo "Scanning udi-plus-angular..."
+                                sh """
+                                    AUTH_HEADER="Authorization: Basic \$(echo -n "\$HARBOR_USERNAME:\$HARBOR_PASSWORD" | base64)"
+
+                                    wget --post-data="" \\
+                                      --header="accept: application/json" \\
+                                      --header="Content-Type: application/json" \\
+                                      --header="\$AUTH_HEADER" \\
+                                      -S -O- \\
+                                      "https://harbor.ethosengine.com/api/v2.0/projects/devspaces/repositories/udi-plus-angular/artifacts/${IMAGE_TAG_DATED}/scan" || \\
+                                    echo "Scan request for udi-plus-angular submitted"
+                                """
                             }
 
                             if (env.IMAGES_BUILT && env.IMAGES_BUILT.contains('udi-plus-gae:')) {
-                                scanStages['udi-plus-gae'] = { scanImage('udi-plus-gae') }
-                            }
+                                echo "Scanning udi-plus-gae..."
+                                sh """
+                                    AUTH_HEADER="Authorization: Basic \$(echo -n "\$HARBOR_USERNAME:\$HARBOR_PASSWORD" | base64)"
 
-                            parallel scanStages
+                                    wget --post-data="" \\
+                                      --header="accept: application/json" \\
+                                      --header="Content-Type: application/json" \\
+                                      --header="\$AUTH_HEADER" \\
+                                      -S -O- \\
+                                      "https://harbor.ethosengine.com/api/v2.0/projects/devspaces/repositories/udi-plus-gae/artifacts/${IMAGE_TAG_DATED}/scan" || \\
+                                    echo "Scan request for udi-plus-gae submitted"
+                                """
+                            }
 
                             echo "✅ Security scans initiated"
                             echo "Check Harbor UI for scan results"
