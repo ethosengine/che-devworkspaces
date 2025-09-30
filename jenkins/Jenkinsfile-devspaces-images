@@ -204,8 +204,14 @@ spec:
                                 .
                         """
 
+                        // Verify image actually exists
+                        def imageExists = sh(script: "nerdctl -n k8s.io images -q ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED}", returnStdout: true).trim()
+                        if (!imageExists) {
+                            error("❌ VERIFICATION FAILED: udi-plus image not found after build")
+                        }
+
                         env.IMAGES_BUILT = (env.IMAGES_BUILT ?: '') + "udi-plus:${env.IMAGE_TAG_DATED},"
-                        echo "✅ udi-plus image built successfully"
+                        echo "✅ udi-plus image built and verified"
                     }
                 }
             }
@@ -456,6 +462,11 @@ spec:
                             echo "=== Pushing images to Harbor ==="
                             echo "Images built: ${env.IMAGES_BUILT}"
 
+                            // Verify IMAGES_BUILT is not empty
+                            if (!env.IMAGES_BUILT || env.IMAGES_BUILT == '' || env.IMAGES_BUILT == 'null') {
+                                error("❌ VERIFICATION FAILED: IMAGES_BUILT is empty or null - no images to push!")
+                            }
+
                             sh '''
                                 echo $HARBOR_PASSWORD | nerdctl -n k8s.io login harbor.ethosengine.com/devspaces -u $HARBOR_USERNAME --password-stdin
                             '''
@@ -508,9 +519,14 @@ spec:
                                 }
                             }
 
+                            // Verify we have stages to push
+                            if (pushStages.isEmpty()) {
+                                error("❌ VERIFICATION FAILED: No push stages created despite IMAGES_BUILT being set!")
+                            }
+
                             parallel pushStages
 
-                            echo "✅ All images pushed to Harbor"
+                            echo "✅ All images pushed to Harbor (${pushStages.size()} images)"
                         }
                     }
                 }
