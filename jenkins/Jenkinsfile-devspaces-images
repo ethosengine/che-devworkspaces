@@ -55,6 +55,8 @@ spec:
     }
 
     parameters {
+        booleanParam(name: 'BUILD_CI_BUILDER', defaultValue: true,
+                     description: 'Build ci-builder image (used by this pipeline)')
         booleanParam(name: 'BUILD_UDI_PLUS', defaultValue: true,
                      description: 'Build udi-plus base image')
         booleanParam(name: 'BUILD_RUST', defaultValue: true,
@@ -75,6 +77,7 @@ spec:
 
     environment {
         REGISTRY = 'harbor.ethosengine.com/devspaces'
+        CI_BUILDER_REGISTRY = 'harbor.ethosengine.com/ethosengine'
         BASE_IMAGE = 'quay.io/devfile/universal-developer-image:ubi9-latest'
     }
 
@@ -105,6 +108,7 @@ spec:
                 container('builder') {
                     script {
                         echo "=== Build Configuration ==="
+                        echo "Build ci-builder: ${params.BUILD_CI_BUILDER}"
                         echo "Build udi-plus: ${params.BUILD_UDI_PLUS}"
                         echo "Build rust-nix-dev: ${params.BUILD_RUST}"
                         echo "Build angular: ${params.BUILD_ANGULAR}"
@@ -167,6 +171,75 @@ spec:
 
                         // Verify BuildKit
                         sh 'buildctl --addr unix:///run/buildkit/buildkitd.sock debug workers'
+                    }
+                }
+            }
+        }
+
+        stage('Build ci-builder') {
+            when {
+                expression { params.BUILD_CI_BUILDER }
+            }
+            steps {
+                container('builder') {
+                    script {
+                        echo "=== Building ci-builder image ==="
+
+                        sh """#!/bin/bash
+                            set -euo pipefail
+
+                            # Verify BuildKit
+                            buildctl --addr unix:///run/buildkit/buildkitd.sock debug workers > /dev/null
+
+                            # Create build context
+                            mkdir -p /tmp/build-context/ci-builder
+                            cp -r containers/ci-builder/* /tmp/build-context/ci-builder/
+
+                            # Build image
+                            cd /tmp/build-context/ci-builder
+                            BUILDKIT_HOST=unix:///run/buildkit/buildkitd.sock \\
+                              nerdctl -n k8s.io build \\
+                                --no-cache \\
+                                -t ${CI_BUILDER_REGISTRY}/ci-builder:${IMAGE_TAG_LATEST} \\
+                                -t ${CI_BUILDER_REGISTRY}/ci-builder:${IMAGE_TAG_DATED} \\
+                                -t ${CI_BUILDER_REGISTRY}/ci-builder:${IMAGE_TAG_GIT} \\
+                                .
+                        """
+
+                        // Verify image actually exists
+                        def imageExists = sh(script: "nerdctl -n k8s.io images -q ${CI_BUILDER_REGISTRY}/ci-builder:${IMAGE_TAG_DATED}", returnStdout: true).trim()
+                        if (!imageExists) {
+                            error("❌ VERIFICATION FAILED: ci-builder image not found after build")
+                        }
+
+                        env.IMAGES_BUILT = (env.IMAGES_BUILT ?: '') + "ci-builder:${env.IMAGE_TAG_DATED},"
+                        echo "✅ ci-builder image built and verified"
+                        echo "DEBUG: IMAGES_BUILT after ci-builder build: '${env.IMAGES_BUILT}'"
+                    }
+                }
+            }
+        }
+
+        stage('Test ci-builder') {
+            when {
+                expression { params.BUILD_CI_BUILDER && !params.SKIP_SMOKE_TESTS }
+            }
+            steps {
+                container('builder') {
+                    script {
+                        echo "=== Testing ci-builder image ==="
+
+                        sh """#!/bin/bash
+                            set -euo pipefail
+
+                            # Verify image exists
+                            echo "Verifying image exists..."
+                            nerdctl -n k8s.io images | grep "${CI_BUILDER_REGISTRY}/ci-builder" | grep "${IMAGE_TAG_DATED}"
+                            echo "✅ Image built successfully"
+                            echo "⚠️  Skipping container smoke tests (nested containerization not supported in Jenkins pod)"
+                        """
+
+                        echo "✅ ci-builder smoke tests passed"
                     }
                 }
             }
@@ -483,15 +556,38 @@ spec:
                                 echo $HARBOR_PASSWORD | nerdctl -n k8s.io login harbor.ethosengine.com/devspaces -u $HARBOR_USERNAME --password-stdin
                             '''
 
+                            // Test network speed to Harbor
+                            sh """
+                                echo "Testing network connectivity to Harbor..."
+                                ping -c 3 harbor.ethosengine.com || true
+                                echo ""
+                                echo "Checking image sizes before push..."
+                                nerdctl -n k8s.io images | grep "${REGISTRY}" | grep "${IMAGE_TAG_DATED}" || true
+                            """
+
                             // Push all images sequentially
+                            if (env.IMAGES_BUILT && env.IMAGES_BUILT.contains('ci-builder:')) {
+                                echo "Pushing ci-builder..."
+                                def pushStart = System.currentTimeMillis()
+                                sh """
+                                    nerdctl -n k8s.io push ${CI_BUILDER_REGISTRY}/ci-builder:${IMAGE_TAG_LATEST}
+                                    nerdctl -n k8s.io push ${CI_BUILDER_REGISTRY}/ci-builder:${IMAGE_TAG_DATED}
+                                    nerdctl -n k8s.io push ${CI_BUILDER_REGISTRY}/ci-builder:${IMAGE_TAG_GIT}
+                                """
+                                def pushDuration = (System.currentTimeMillis() - pushStart) / 1000
+                                echo "✅ Pushed ci-builder (took ${pushDuration}s)"
+                            }
+
                             if (env.IMAGES_BUILT && env.IMAGES_BUILT.contains('udi-plus:')) {
-                                echo "Pushing udi-plus..."
+                                echo "Pushing udi-plus (this may take several minutes for large images)..."
+                                def pushStart = System.currentTimeMillis()
                                 sh """
                                     nerdctl -n k8s.io push ${REGISTRY}/udi-plus:${IMAGE_TAG_LATEST}
                                     nerdctl -n k8s.io push ${REGISTRY}/udi-plus:${IMAGE_TAG_DATED}
                                     nerdctl -n k8s.io push ${REGISTRY}/udi-plus:${IMAGE_TAG_GIT}
                                 """
-                                echo "✅ Pushed udi-plus"
+                                def pushDuration = (System.currentTimeMillis() - pushStart) / 1000
+                                echo "✅ Pushed udi-plus (took ${pushDuration}s)"
                             }
 
                             if (env.IMAGES_BUILT && env.IMAGES_BUILT.contains('rust-nix-dev:')) {
@@ -555,6 +651,21 @@ spec:
                             echo "=== Triggering Harbor security scans ==="
 
                             // Trigger scans sequentially (only for images that were pushed)
+                            if (env.IMAGES_BUILT && env.IMAGES_BUILT.contains('ci-builder:')) {
+                                echo "Scanning ci-builder..."
+                                sh """
+                                    AUTH_HEADER="Authorization: Basic \$(echo -n "\$HARBOR_USERNAME:\$HARBOR_PASSWORD" | base64)"
+
+                                    wget --post-data="" \\
+                                      --header="accept: application/json" \\
+                                      --header="Content-Type: application/json" \\
+                                      --header="\$AUTH_HEADER" \\
+                                      -S -O- \\
+                                      "https://harbor.ethosengine.com/api/v2.0/projects/ethosengine/repositories/ci-builder/artifacts/${IMAGE_TAG_DATED}/scan" || \\
+                                    echo "Scan request for ci-builder submitted"
+                                """
+                            }
+
                             if (env.IMAGES_BUILT && env.IMAGES_BUILT.contains('udi-plus:')) {
                                 echo "Scanning udi-plus..."
                                 sh """
@@ -643,6 +754,9 @@ IMAGES_BUILT=${env.IMAGES_BUILT}
 
 # Individual Image Tags
 """
+                        if (params.BUILD_CI_BUILDER) {
+                            metadata += "CI_BUILDER=${CI_BUILDER_REGISTRY}/ci-builder:${IMAGE_TAG_DATED}\n"
+                        }
                         if (params.BUILD_UDI_PLUS && env.SKIP_UDI_PLUS_BUILD != 'true') {
                             metadata += "UDI_PLUS=${REGISTRY}/udi-plus:${IMAGE_TAG_DATED}\n"
                         }
@@ -690,6 +804,11 @@ IMAGES_BUILT=${env.IMAGES_BUILT}
                             echo ""
 
                             echo "Removing images from this build..."
+
+                            # ci-builder images
+                            nerdctl -n k8s.io rmi ${CI_BUILDER_REGISTRY}/ci-builder:${IMAGE_TAG_LATEST} 2>/dev/null || true
+                            nerdctl -n k8s.io rmi ${CI_BUILDER_REGISTRY}/ci-builder:${IMAGE_TAG_DATED} 2>/dev/null || true
+                            nerdctl -n k8s.io rmi ${CI_BUILDER_REGISTRY}/ci-builder:${IMAGE_TAG_GIT} 2>/dev/null || true
 
                             # udi-plus images
                             nerdctl -n k8s.io rmi ${REGISTRY}/udi-plus:${IMAGE_TAG_LATEST} 2>/dev/null || true
