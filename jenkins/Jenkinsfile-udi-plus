@@ -1,0 +1,142 @@
+// UDI Plus Base Image Pipeline
+@Library('imagebuilder-shared') _
+
+pipeline {
+    agent {
+        kubernetes {
+            cloud 'kubernetes'
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccount: jenkins-deployer
+  nodeSelector:
+    node-type: edge
+  volumes:
+    - name: containerd-sock
+      hostPath:
+        path: /var/snap/microk8s/common/run/containerd.sock
+        type: Socket
+    - name: buildkit-run
+      emptyDir: {}
+  containers:
+    - name: builder
+      image: harbor.ethosengine.com/ethosengine/ci-builder:latest
+      command:
+        - cat
+      tty: true
+      resources:
+        requests:
+          ephemeral-storage: "2Gi"
+        limits:
+          ephemeral-storage: "4Gi"
+      volumeMounts:
+        - name: containerd-sock
+          mountPath: /run/containerd/containerd.sock
+        - name: buildkit-run
+          mountPath: /run/buildkit
+    - name: buildkitd
+      image: moby/buildkit:v0.12.5
+      securityContext:
+        privileged: true
+      args:
+        - --addr
+        - unix:///run/buildkit/buildkitd.sock
+        - --oci-worker=true
+        - --containerd-worker=false
+      volumeMounts:
+        - name: containerd-sock
+          mountPath: /run/containerd/containerd.sock
+        - name: buildkit-run
+          mountPath: /run/buildkit
+'''
+        }
+    }
+
+    parameters {
+        booleanParam(name: 'FORCE_BUILD', defaultValue: false,
+                     description: 'Force rebuild even if base image unchanged')
+        booleanParam(name: 'SKIP_PUSH', defaultValue: false,
+                     description: 'Skip pushing to Harbor')
+        booleanParam(name: 'SKIP_SECURITY_SCAN', defaultValue: false,
+                     description: 'Skip security scanning')
+        booleanParam(name: 'SKIP_SMOKE_TESTS', defaultValue: false,
+                     description: 'Skip smoke tests')
+    }
+
+    triggers {
+        // Check for base image updates daily at 2 AM
+        cron('0 2 * * *')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                container('builder') {
+                    script {
+                        checkout scm
+                        sh 'git config --global --add safe.directory $(pwd)'
+                        sh 'git clean -fdx'
+                        sh 'git reset --hard HEAD'
+                        echo "Building from branch: ${env.BRANCH_NAME ?: 'main'}"
+                    }
+                }
+            }
+        }
+
+        stage('Build & Push') {
+            steps {
+                container('builder') {
+                    script {
+                        def result = buildDevspaceImage(
+                            imageName: 'udi-plus',
+                            dockerfile: 'containers/udi-plus',
+                            registry: 'harbor.ethosengine.com/devspaces',
+                            baseImage: 'quay.io/devfile/universal-developer-image:ubi9-latest',
+                            forceBuild: params.FORCE_BUILD,
+                            skipPush: params.SKIP_PUSH,
+                            skipSecurityScan: params.SKIP_SECURITY_SCAN,
+                            skipSmokeTests: params.SKIP_SMOKE_TESTS
+                        )
+
+                        env.BUILD_RESULT = result.skipped ? 'SKIPPED' : 'SUCCESS'
+                        env.IMAGE_NAME = result.fullImageName
+
+                        // Trigger downstream builds if this was updated
+                        if (!result.skipped && !params.SKIP_PUSH) {
+                            echo "✅ udi-plus updated - triggering downstream builds"
+                            build job: 'devspaces-rust-nix-dev', wait: false
+                            build job: 'devspaces-udi-plus-angular', wait: false
+                            build job: 'devspaces-udi-plus-gae', wait: false
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            container('builder') {
+                script {
+                    if (env.IMAGE_TAG_DATED && env.IMAGE_TAG_GIT) {
+                        sh """
+                            set +e
+                            nerdctl -n k8s.io rmi harbor.ethosengine.com/devspaces/udi-plus:latest 2>/dev/null || true
+                            nerdctl -n k8s.io rmi harbor.ethosengine.com/devspaces/udi-plus:${IMAGE_TAG_DATED} 2>/dev/null || true
+                            nerdctl -n k8s.io rmi harbor.ethosengine.com/devspaces/udi-plus:${IMAGE_TAG_GIT} 2>/dev/null || true
+                        """
+                    }
+                }
+            }
+        }
+        success {
+            script {
+                echo "✅ udi-plus pipeline completed: ${env.BUILD_RESULT}"
+                if (env.IMAGE_NAME) {
+                    echo "Image: ${env.IMAGE_NAME}"
+                }
+            }
+        }
+    }
+}
