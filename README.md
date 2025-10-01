@@ -47,6 +47,10 @@ All images are built via Jenkins pipelines and hosted on Harbor registry.
 ### Image Hierarchy
 
 ```
+# CI/CD Builder Image (independent)
+ci-builder (standalone multi-tool CI/CD image)
+
+# Development Environment Images
 quay.io/devfile/universal-developer-image:ubi9-latest
   └─> udi-plus (base image with Claude Code)
        ├─> rust-nix-dev (Rust + Nix + Holochain)
