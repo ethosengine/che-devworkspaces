@@ -76,7 +76,6 @@ spec:
     environment {
         REGISTRY = 'harbor.ethosengine.com/devspaces'
         BASE_IMAGE = 'quay.io/devfile/universal-developer-image:ubi9-latest'
-        IMAGES_BUILT = ''
     }
 
     stages {
@@ -125,6 +124,9 @@ spec:
                         echo "Latest: ${env.IMAGE_TAG_LATEST}"
                         echo "Dated: ${env.IMAGE_TAG_DATED}"
                         echo "Git hash: ${env.IMAGE_TAG_GIT}"
+
+                        // Initialize IMAGES_BUILT tracker
+                        env.IMAGES_BUILT = ''
 
                         // Check if base image has updates
                         if (params.BUILD_UDI_PLUS && !params.FORCE_BUILD) {
@@ -465,7 +467,8 @@ spec:
                             return
                         }
 
-                        if (!env.IMAGES_BUILT || env.IMAGES_BUILT == '' || env.IMAGES_BUILT == 'null') {
+                        def imagesBuilt = env.IMAGES_BUILT ?: ''
+                        if (imagesBuilt == '' || imagesBuilt == 'null') {
                             echo "⏭️  No images were built, skipping push"
                             return
                         }
@@ -540,7 +543,8 @@ spec:
                             return
                         }
 
-                        if (!env.IMAGES_BUILT || env.IMAGES_BUILT == '' || env.IMAGES_BUILT == 'null') {
+                        def imagesBuilt = env.IMAGES_BUILT ?: ''
+                        if (imagesBuilt == '' || imagesBuilt == 'null') {
                             echo "⏭️  No images were built, skipping security scan"
                             return
                         }
@@ -623,7 +627,8 @@ spec:
             steps {
                 container('builder') {
                     script {
-                        if (!env.IMAGES_BUILT || env.IMAGES_BUILT == '' || env.IMAGES_BUILT == 'null') {
+                        def imagesBuilt = env.IMAGES_BUILT ?: ''
+                        if (imagesBuilt == '' || imagesBuilt == 'null') {
                             echo "⏭️  No images were built, skipping build info archive"
                             return
                         }
