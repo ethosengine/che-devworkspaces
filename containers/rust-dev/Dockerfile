@@ -120,7 +120,10 @@ RUN mkdir -p /home/user/bin && \
     echo '' >> /home/user/bin/init-nix && \
     echo '# Configure Nix for storage optimization' >> /home/user/bin/init-nix && \
     echo 'mkdir -p ~/.config/nix' >> /home/user/bin/init-nix && \
-    echo 'echo "# Automatic garbage collection thresholds" > ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
+    echo 'echo "# Experimental features" > ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
+    echo 'echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
+    echo 'echo "" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
+    echo 'echo "# Automatic garbage collection thresholds" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
     echo 'echo "min-free = 5368709120" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
     echo 'echo "max-free = 10737418240" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
     echo 'echo "" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
