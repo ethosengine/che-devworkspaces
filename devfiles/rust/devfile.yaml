@@ -55,7 +55,7 @@ components:
           targetPort: 5005
           exposure: internal
       volumeMounts:
-        - name: dev-storage
+        - name: nix-store
           path: /nix
         - name: cargo-cache
           path: /home/user/.cargo
@@ -64,9 +64,9 @@ components:
 
   # Nix store volume - 30Gi recommended for stable operation
   # Breakdown: Base Nix (2GB) + nixpkgs (500MB) + Rust (3GB) + builds (4GB) + buffer (20GB)
-  - name: dev-storage
+  - name: nix-store
     volume:
-      size: 25Gi
+      size: 15Gi
   # Cargo cache - dependency artifacts and incremental builds
   - name: cargo-cache
     volume:
