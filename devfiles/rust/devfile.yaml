@@ -34,16 +34,18 @@ components:
           value: '1'
         - name: USER
           value: user
+        # XDG directories now use /tmp (ephemeral) to avoid consuming PVC space
+        # This matches the container's bashrc configuration
         - name: XDG_CACHE_HOME
-          value: /nix-xdg/cache
+          value: /tmp/nix-cache
         - name: XDG_DATA_HOME
-          value: /nix-xdg/data
+          value: /tmp/nix-data
         - name: XDG_STATE_HOME
-          value: /nix-xdg/state
+          value: /tmp/nix-state
         - name: XDG_CONFIG_HOME
-          value: /nix-xdg/config
+          value: /tmp/nix-config
         - name: NPM_CONFIG_CACHE
-          value: /nix-xdg/cache/npm
+          value: /tmp/nix-cache/npm
       endpoints:
         - name: http-8080
           targetPort: 8080
@@ -60,12 +62,16 @@ components:
         - name: rustup-cache
           path: /home/user/.rustup
 
+  # Nix store volume - 30Gi recommended for stable operation
+  # Breakdown: Base Nix (2GB) + nixpkgs (500MB) + Rust (3GB) + builds (4GB) + buffer (20GB)
   - name: dev-storage
     volume:
       size: 25Gi
+  # Cargo cache - dependency artifacts and incremental builds
   - name: cargo-cache
     volume:
       size: 3Gi
+  # Rustup toolchain cache - stable, nightly, components
   - name: rustup-cache
     volume:
       size: 2Gi
@@ -140,3 +146,17 @@ commands:
         else
           echo "📦 Rust Analyzer already installed"
         fi
+
+  - id: nix-status
+    exec:
+      label: "Check Nix/Rust Status and Storage"
+      component: rust-dev
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: nix-status
+
+  - id: nix-clean
+    exec:
+      label: "Run Nix Garbage Collection"
+      component: rust-dev
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: nix-clean

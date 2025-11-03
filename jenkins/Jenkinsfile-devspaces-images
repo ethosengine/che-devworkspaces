@@ -1,6 +1,6 @@
-// DevSpaces Image Builder Pipeline
+// Deprecated combined DevSpaces Image Builder Pipeline 
 // Builds udi-plus base image and all derived images sequentially
-// Can be split into separate pipelines later if needed
+// This was split into separate pipelines
 
 pipeline {
     agent {
