@@ -59,7 +59,7 @@ RUN mkdir -p /home/user/bin && \
     echo '' >> /home/user/bin/init-nix && \
     echo '# CRITICAL FIX: Marker file in /nix (persists in PVC across restarts)' >> /home/user/bin/init-nix && \
     echo '# Using versioned marker to allow forced re-initialization if needed' >> /home/user/bin/init-nix && \
-    echo 'NIX_INIT_MARKER="/nix/.initialized-v3"' >> /home/user/bin/init-nix && \
+    echo 'NIX_INIT_MARKER="/nix/.initialized-v4"' >> /home/user/bin/init-nix && \
     echo '' >> /home/user/bin/init-nix && \
     echo '# Prevent parallel initialization from multiple shells' >> /home/user/bin/init-nix && \
     echo 'NIX_INIT_LOCK="/nix/.init-lock"' >> /home/user/bin/init-nix && \
@@ -123,6 +123,13 @@ RUN mkdir -p /home/user/bin && \
     echo 'echo "# Experimental features" > ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
     echo 'echo "experimental-features = nix-command flakes" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
     echo 'echo "" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
+    echo 'echo "# CRITICAL: Disable sandbox for rootless containers (Eclipse Che/DevSpaces)" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
+    echo 'echo "sandbox = false" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
+    echo 'echo "" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
+    echo 'echo "# Holochain binary cache" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
+    echo 'echo "substituters = https://cache.nixos.org https://holochain-ci.cachix.org" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
+    echo 'echo "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= holochain-ci.cachix.org-1:5IUSkZc0aoRS53rfkvH9Kid40NpyjwCMCzwRTXy+QN8=" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
+    echo 'echo "" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
     echo 'echo "# Automatic garbage collection thresholds" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
     echo 'echo "min-free = 5368709120" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
     echo 'echo "max-free = 10737418240" >> ~/.config/nix/nix.conf' >> /home/user/bin/init-nix && \
@@ -170,8 +177,8 @@ RUN chmod +x /home/user/bin/init-nix
 RUN echo '#!/bin/bash' > /home/user/bin/nix-status && \
     echo '' >> /home/user/bin/nix-status && \
     echo 'echo "=== Nix Initialization Status ==="' >> /home/user/bin/nix-status && \
-    echo 'if [ -f /nix/.initialized-v3 ]; then' >> /home/user/bin/nix-status && \
-    echo '    echo "✅ Initialized (marker: /nix/.initialized-v3)"' >> /home/user/bin/nix-status && \
+    echo 'if [ -f /nix/.initialized-v4 ]; then' >> /home/user/bin/nix-status && \
+    echo '    echo "✅ Initialized (marker: /nix/.initialized-v4)"' >> /home/user/bin/nix-status && \
     echo 'else' >> /home/user/bin/nix-status && \
     echo '    echo "❌ Not initialized"' >> /home/user/bin/nix-status && \
     echo 'fi' >> /home/user/bin/nix-status && \
@@ -263,7 +270,7 @@ RUN echo '' >> /home/user/.bashrc && \
     echo '' >> /home/user/.bashrc && \
     echo '# CRITICAL FIX: Check marker file in /nix (persists in PVC)' >> /home/user/.bashrc && \
     echo '# Only initialize on FIRST terminal of a NEW workspace' >> /home/user/.bashrc && \
-    echo 'if [ ! -f /nix/.initialized-v3 ] && [ -t 0 ]; then' >> /home/user/.bashrc && \
+    echo 'if [ ! -f /nix/.initialized-v4 ] && [ -t 0 ]; then' >> /home/user/.bashrc && \
     echo '    echo "🔧 First run detected, initializing Nix and Rust..."' >> /home/user/.bashrc && \
     echo '    /home/user/bin/init-nix' >> /home/user/.bashrc && \
     echo 'fi' >> /home/user/.bashrc && \
@@ -289,6 +296,11 @@ RUN echo '' >> /home/user/.bashrc && \
     echo 'holo-new-project() {' >> /home/user/.bashrc && \
     echo '    echo "Available templates: web-app, vanilla, lit, svelte, react, vue, headless"' >> /home/user/.bashrc && \
     echo '    echo "Usage: holo-scaffold web-app my-app-name"' >> /home/user/.bashrc && \
+    echo '}' >> /home/user/.bashrc && \
+    echo '' >> /home/user/.bashrc && \
+    echo 'holo-test() {' >> /home/user/.bashrc && \
+    echo '    echo "🧪 Testing Holochain scaffolding setup..."' >> /home/user/.bashrc && \
+    echo '    nix run --refresh "github:holochain/holonix?ref=main-0.5#hc-scaffold" -- --version' >> /home/user/.bashrc && \
     echo '}' >> /home/user/.bashrc
 
 # Fix permissions for arbitrary UID (Che requirement)
