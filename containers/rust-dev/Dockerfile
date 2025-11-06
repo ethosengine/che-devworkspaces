@@ -115,8 +115,23 @@ RUN mkdir -p /home/user/bin && \
     echo '    curl -L https://nixos.org/nix/install | sh -s -- --no-daemon' >> /home/user/bin/init-nix && \
     echo 'fi' >> /home/user/bin/init-nix && \
     echo '' >> /home/user/bin/init-nix && \
+    echo '# Verify Nix installation succeeded' >> /home/user/bin/init-nix && \
+    echo 'if [ ! -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then' >> /home/user/bin/init-nix && \
+    echo '    echo "❌ ERROR: Nix installation failed - profile not created"' >> /home/user/bin/init-nix && \
+    echo '    echo "Please check the installation logs above for errors"' >> /home/user/bin/init-nix && \
+    echo '    rm -f "$NIX_INIT_LOCK"' >> /home/user/bin/init-nix && \
+    echo '    exit 1' >> /home/user/bin/init-nix && \
+    echo 'fi' >> /home/user/bin/init-nix && \
+    echo '' >> /home/user/bin/init-nix && \
     echo '# Source Nix profile' >> /home/user/bin/init-nix && \
     echo 'source "$HOME/.nix-profile/etc/profile.d/nix.sh"' >> /home/user/bin/init-nix && \
+    echo '' >> /home/user/bin/init-nix && \
+    echo '# Verify nix commands are available' >> /home/user/bin/init-nix && \
+    echo 'if ! command -v nix-env &>/dev/null; then' >> /home/user/bin/init-nix && \
+    echo '    echo "❌ ERROR: Nix commands not available after installation"' >> /home/user/bin/init-nix && \
+    echo '    rm -f "$NIX_INIT_LOCK"' >> /home/user/bin/init-nix && \
+    echo '    exit 1' >> /home/user/bin/init-nix && \
+    echo 'fi' >> /home/user/bin/init-nix && \
     echo '' >> /home/user/bin/init-nix && \
     echo '# Configure Nix for storage optimization' >> /home/user/bin/init-nix && \
     echo 'mkdir -p ~/.config/nix' >> /home/user/bin/init-nix && \
