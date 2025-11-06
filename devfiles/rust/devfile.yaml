@@ -29,7 +29,7 @@ components:
       sourceMapping: /projects
       env:
         - name: CLAUDE_CONFIG_DIR
-          value: /tmp/claude-config
+          value: /projects/.claude-config
         - name: RUST_BACKTRACE
           value: '1'
         - name: USER
@@ -46,6 +46,18 @@ components:
           value: /tmp/nix-config
         - name: NPM_CONFIG_CACHE
           value: /tmp/nix-cache/npm
+        # Nix configuration - CRITICAL for Holochain development in rootless containers
+        - name: NIX_CONFIG
+          value: |
+            experimental-features = nix-command flakes
+            sandbox = false
+            substituters = https://cache.nixos.org https://holochain-ci.cachix.org
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= holochain-ci.cachix.org-1:5IUSkZc0aoRS53rfkvH9Kid40NpyjwCMCzwRTXy+QN8=
+            auto-optimise-store = true
+            min-free = 5368709120
+            max-free = 10737418240
+            keep-outputs = false
+            keep-derivations = false
       endpoints:
         - name: http-8080
           targetPort: 8080

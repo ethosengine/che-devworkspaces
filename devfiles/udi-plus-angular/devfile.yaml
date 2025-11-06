@@ -36,7 +36,7 @@ components:
       sourceMapping: /projects
       env:
         - name: CLAUDE_CONFIG_DIR
-          value: /tmp/claude-config
+          value: /projects/.claude-config
         - name: NODE_OPTIONS
           value: --max-old-space-size=4096
       endpoints:

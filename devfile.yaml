@@ -37,7 +37,7 @@ components:
       mountSources: true
       env:
         - name: CLAUDE_CONFIG_DIR
-          value: /tmp/claude-config
+          value: /projects/.claude-config
         - name: JENKINS_URL
           value: "https://jenkins.ethosengine.com"
 commands:
