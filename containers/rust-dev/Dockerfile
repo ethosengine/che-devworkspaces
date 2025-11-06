@@ -268,8 +268,17 @@ RUN echo '' >> /home/user/.bashrc && \
     echo '# Create XDG directories' >> /home/user/.bashrc && \
     echo 'mkdir -p "$XDG_CACHE_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_CONFIG_HOME" "$NPM_CONFIG_CACHE"' >> /home/user/.bashrc && \
     echo '' >> /home/user/.bashrc && \
-    echo '# CRITICAL FIX: Check marker file in /nix (persists in PVC)' >> /home/user/.bashrc && \
-    echo '# Only initialize on FIRST terminal of a NEW workspace' >> /home/user/.bashrc && \
+    echo '# CRITICAL FIX: Recreate nix-profile symlink if missing (after workspace restart)' >> /home/user/.bashrc && \
+    echo 'if [ -f /nix/.initialized-v4 ] && [ ! -L "$HOME/.nix-profile" ]; then' >> /home/user/.bashrc && \
+    echo '    echo "🔗 Recreating nix-profile symlink..."' >> /home/user/.bashrc && \
+    echo '    NIX_PROFILE="/nix/var/nix/profiles/per-user/$USER/profile"' >> /home/user/.bashrc && \
+    echo '    if [ -e "$NIX_PROFILE" ]; then' >> /home/user/.bashrc && \
+    echo '        ln -s "$NIX_PROFILE" "$HOME/.nix-profile"' >> /home/user/.bashrc && \
+    echo '        echo "✅ Symlink recreated: ~/.nix-profile -> $NIX_PROFILE"' >> /home/user/.bashrc && \
+    echo '    fi' >> /home/user/.bashrc && \
+    echo 'fi' >> /home/user/.bashrc && \
+    echo '' >> /home/user/.bashrc && \
+    echo '# Initialize Nix on first run (marker file missing)' >> /home/user/.bashrc && \
     echo 'if [ ! -f /nix/.initialized-v4 ] && [ -t 0 ]; then' >> /home/user/.bashrc && \
     echo '    echo "🔧 First run detected, initializing Nix and Rust..."' >> /home/user/.bashrc && \
     echo '    /home/user/bin/init-nix' >> /home/user/.bashrc && \
