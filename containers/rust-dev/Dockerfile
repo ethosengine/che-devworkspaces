@@ -285,11 +285,15 @@ RUN echo '' >> /home/user/.bashrc && \
     echo '' >> /home/user/.bashrc && \
     echo '# CRITICAL FIX: Recreate nix-profile symlink if missing (after workspace restart)' >> /home/user/.bashrc && \
     echo 'if [ -f /nix/.initialized-v4 ] && [ ! -L "$HOME/.nix-profile" ]; then' >> /home/user/.bashrc && \
-    echo '    echo "🔗 Recreating nix-profile symlink..."' >> /home/user/.bashrc && \
     echo '    NIX_PROFILE="/nix/var/nix/profiles/per-user/$USER/profile"' >> /home/user/.bashrc && \
     echo '    if [ -e "$NIX_PROFILE" ]; then' >> /home/user/.bashrc && \
+    echo '        echo "🔗 Recreating nix-profile symlink..."' >> /home/user/.bashrc && \
     echo '        ln -s "$NIX_PROFILE" "$HOME/.nix-profile"' >> /home/user/.bashrc && \
     echo '        echo "✅ Symlink recreated: ~/.nix-profile -> $NIX_PROFILE"' >> /home/user/.bashrc && \
+    echo '    else' >> /home/user/.bashrc && \
+    echo '        echo "⚠️  WARNING: Marker file exists but Nix profile not found"' >> /home/user/.bashrc && \
+    echo '        echo "    Removing bad marker and re-initializing..."' >> /home/user/.bashrc && \
+    echo '        rm -f /nix/.initialized-v4' >> /home/user/.bashrc && \
     echo '    fi' >> /home/user/.bashrc && \
     echo 'fi' >> /home/user/.bashrc && \
     echo '' >> /home/user/.bashrc && \
