@@ -26,8 +26,12 @@ RUN dnf install -y \
     screen \
     && dnf clean all
 
-# Install Chromium for headless browser testing (npm/Karma)
-RUN dnf install -y chromium && dnf clean all
+# Install Chromium dependencies and Chromium for headless browser testing (npm/Karma)
+RUN dnf install -y \
+    pipewire-libs \
+    double-conversion \
+    chromium \
+    && dnf clean all
 
 # Set Chrome binary path for Karma and other testing tools
 ENV CHROME_BIN=/usr/bin/chromium-browser
