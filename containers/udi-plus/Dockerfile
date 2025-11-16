@@ -37,6 +37,12 @@ RUN dnf install -y wget unzip && \
     dnf remove -y wget unzip && \
     dnf clean all
 
+# Install Chrome runtime dependencies for graphics rendering
+RUN dnf install -y \
+    libdrm \
+    mesa-libgbm \
+    && dnf clean all
+
 # Set Chrome binary path for Karma and other testing tools
 ENV CHROME_BIN=/usr/local/bin/chrome
 ENV CHROME_PATH=/opt/chrome-linux64/chrome
