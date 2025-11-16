@@ -41,3 +41,5 @@ components:
           value: /usr/local/bin/chrome
         - name: CHROME_PATH
           value: /opt/chrome-linux64/chrome
+        - name: CHROME_FLAGS
+          value: --headless=new --no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox
