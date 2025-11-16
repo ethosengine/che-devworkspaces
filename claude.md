@@ -2,6 +2,87 @@
 
 A practical reference for building secure, efficient DevWorkspaces in Eclipse Che and OpenShift Dev Spaces.
 
+## This Repository
+
+This repository (`che-devworkspaces`) provides custom container images and devfile configurations for Eclipse Che/OpenShift Dev Spaces. All images are built via Jenkins pipelines and hosted on Harbor registry.
+
+### Image Architecture
+
+The repository manages 5 container images in a dependency hierarchy:
+
+**CI/CD Image (Independent):**
+- **ci-builder**: Multi-tool CI/CD image (nerdctl, buildctl, kubectl, SonarQube scanner)
+  - Registry: `harbor.ethosengine.com/ethosengine/ci-builder`
+  - Dockerfile: `containers/ci-builder/Dockerfile`
+
+**Development Images:**
+```
+quay.io/devfile/universal-developer-image:ubi9-latest
+  └─> udi-plus (base with Claude Code CLI + Java 21)
+       ├─> rust-nix-dev (Rust + Nix + Holochain)
+       ├─> udi-plus-angular (Angular + Node.js)
+       └─> udi-plus-gae (Google App Engine + Python 2.7)
+```
+
+- **udi-plus**: Base UDI with Claude Code pre-installed
+  - Registry: `harbor.ethosengine.com/devspaces/udi-plus`
+  - Triggers downstream builds automatically on successful build
+
+- **rust-nix-dev**: Rust development with Nix package manager
+  - Registry: `harbor.ethosengine.com/devspaces/rust-nix-dev`
+  - Special: Nix/Rust installed at RUNTIME (not build time) to survive PVC mounts
+
+- **udi-plus-angular**: Angular development
+  - Registry: `harbor.ethosengine.com/devspaces/udi-plus-angular`
+
+- **udi-plus-gae**: Google App Engine with Python 2.7
+  - Registry: `harbor.ethosengine.com/devspaces/udi-plus-gae`
+
+### Building Images
+
+**Local builds:**
+```bash
+cd containers/udi-plus
+podman build --pull --no-cache -t harbor.ethosengine.com/devspaces/udi-plus:latest .
+podman push harbor.ethosengine.com/devspaces/udi-plus:latest
+```
+
+**Jenkins pipelines:**
+- Each image has its own pipeline (e.g., `devspaces-udi-plus`, `devspaces-rust-nix-dev`)
+- Shared library: `jenkins/shared-library/vars/buildDevspaceImage.groovy`
+- Each build creates 3 tags: `latest`, `<datestamp>`, `<git-hash>`
+- Successful `udi-plus` builds trigger downstream image builds
+
+See `jenkins/JENKINS_SETUP.md` for complete pipeline setup instructions.
+
+### Persisting Data Across Workspace Restarts
+
+**CRITICAL**: The `/projects` directory is the default persistent volume in Eclipse Che/DevSpaces:
+- `/projects` persists across workspace restarts
+- `/home/user` does NOT persist by default (unless explicitly mounted to a volume)
+- Use `/projects` for any configuration that needs to survive restarts
+
+**Example: Claude Code Configuration**
+```yaml
+env:
+  - name: CLAUDE_CONFIG_DIR
+    value: /projects/.claude-config
+```
+
+This pattern allows Claude Code's MCP server configurations and settings to persist between workspace restarts without requiring an additional volume mount for `/home/user`.
+
+**Other common patterns:**
+```yaml
+# Store tool configurations in /projects
+env:
+  - name: KUBECONFIG
+    value: /projects/.kube/config
+  - name: DOCKER_CONFIG
+    value: /projects/.docker
+  - name: NPM_CONFIG_USERCONFIG
+    value: /projects/.npmrc
+```
+
 ## Platform Overview
 
 - **Eclipse Che**: Open-source Kubernetes-native IDE platform
@@ -139,6 +220,76 @@ volumes:
   path: /home/user/.npm
   size: 2Gi
 ```
+
+## Runtime Initialization Pattern (rust-nix-dev Example)
+
+The `rust-nix-dev` image demonstrates a critical pattern for handling tools that must be installed to mounted volumes.
+
+### The Problem
+When you mount a PVC to `/nix`, Eclipse Che **completely replaces** the directory contents - anything installed at build time is lost. Traditional Dockerfile approaches fail:
+```dockerfile
+# ❌ This doesn't work - /nix gets replaced by empty PVC
+RUN curl -L https://nixos.org/nix/install | sh
+```
+
+### The Solution: Two-Phase Initialization
+
+**Phase 1: Build Time** (in Dockerfile)
+- Install system dependencies (gcc, make, openssl-devel)
+- Pre-download installers to `/tmp` (persists in image)
+- Create initialization scripts in `/home/user/bin/`
+- Configure `.bashrc` to run init script on first terminal
+
+**Phase 2: Runtime** (first terminal open in workspace)
+- Check for marker file `/nix/.initialized-v4` on the PVC
+- If not found: install Nix to `/nix`, configure, install Rust, create marker
+- If found: skip installation, just source Nix profile
+
+### Implementation Details
+
+**Dockerfile creates init script:**
+```dockerfile
+RUN echo '#!/bin/bash' > /home/user/bin/init-nix && \
+    echo 'if [ ! -f /nix/.initialized-v4 ]; then' >> /home/user/bin/init-nix && \
+    echo '  # Install Nix to /nix (on PVC)' >> /home/user/bin/init-nix && \
+    echo '  bash /tmp/nix-installer.sh --no-daemon' >> /home/user/bin/init-nix && \
+    echo '  touch /nix/.initialized-v4' >> /home/user/bin/init-nix && \
+    echo 'fi' >> /home/user/bin/init-nix
+```
+
+**Bashrc auto-runs on first terminal:**
+```dockerfile
+RUN echo 'if [ ! -f /nix/.initialized-v4 ] && [ -t 0 ]; then' >> /home/user/.bashrc && \
+    echo '  /home/user/bin/init-nix' >> /home/user/.bashrc && \
+    echo 'fi' >> /home/user/.bashrc
+```
+
+**Devfile mounts PVC:**
+```yaml
+components:
+  - name: rust-dev
+    container:
+      volumeMounts:
+        - name: nix-store
+          path: /nix
+volumes:
+  - name: nix-store
+    size: 15Gi
+```
+
+### Key Points
+- Marker file must be on the PVC (e.g., `/nix/.initialized-v4`)
+- Pre-download installers to `/tmp` at build time for faster initialization
+- Handle workspace restarts: symlinks in `/home/user` may need recreation
+- Use versioned markers (`v4`) to allow forced re-initialization when needed
+- Set `sandbox = false` in Nix config for rootless container compatibility
+
+### Helper Commands Pattern
+The rust-nix-dev image provides helper commands for users:
+- `nix-status`: Check installation status and storage usage
+- `nix-clean`: Run garbage collection manually
+
+These are simple scripts in `/home/user/bin/` added to PATH.
 
 ## Environment Configuration
 
@@ -332,5 +483,18 @@ spec:
 3. **Separate** persistent data from temporary files using appropriate volume types
 4. **Never** hardcode secrets or use sudo in runtime commands
 5. **Test** permissions and security contexts early in development
+6. **Use `/projects`** for persistent configuration (e.g., `CLAUDE_CONFIG_DIR=/projects/.claude-config`)
+7. **Use runtime initialization** with marker files when tools must install to mounted PVCs (see rust-nix-dev pattern)
+8. **Set `sandbox = false`** in Nix config for rootless containers
+9. **Pre-download installers** to `/tmp` at build time to speed up runtime initialization
+
+## Repository-Specific Notes
+
+For this repository:
+- Images built via Jenkins pipelines using shared library pattern
+- `udi-plus` triggers cascade builds of derived images
+- See `jenkins/JENKINS_SETUP.md` for pipeline setup
+- See `containers/rust-dev/Dockerfile` for runtime initialization pattern example
+- All devfiles in `devfiles/` directory are production-ready examples
 
 This guide covers Eclipse Che 7.42+ with DevWorkspace Operator v0.19+. For older versions, consult migration documentation.
