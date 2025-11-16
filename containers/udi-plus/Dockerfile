@@ -26,16 +26,20 @@ RUN dnf install -y \
     screen \
     && dnf clean all
 
-# Install Chromium for headless browser testing (npm/Karma)
-# Enable EPEL and CRB repos to get chromium and its dependencies
-RUN dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
-    dnf install -y dnf-plugins-core && \
-    dnf config-manager --set-enabled crb && \
-    dnf install -y chromium && \
+# Install Chrome for Testing (Google's official distribution for automated testing)
+# Provides a stable, headless-capable Chrome binary for npm/Karma tests
+RUN dnf install -y wget unzip && \
+    wget -q https://storage.googleapis.com/chrome-for-testing-public/131.0.6778.87/linux64/chrome-linux64.zip && \
+    unzip -q chrome-linux64.zip -d /opt/ && \
+    rm chrome-linux64.zip && \
+    ln -s /opt/chrome-linux64/chrome /usr/local/bin/chrome && \
+    ln -s /opt/chrome-linux64/chrome /usr/local/bin/google-chrome && \
+    dnf remove -y wget unzip && \
     dnf clean all
 
 # Set Chrome binary path for Karma and other testing tools
-ENV CHROME_BIN=/usr/bin/chromium-browser
+ENV CHROME_BIN=/usr/local/bin/chrome
+ENV CHROME_PATH=/opt/chrome-linux64/chrome
 
 # Create Claude + MCP dirs and make them user-writable
 RUN mkdir -p /home/user/.claude \
