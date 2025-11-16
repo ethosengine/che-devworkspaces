@@ -26,8 +26,11 @@ RUN dnf install -y \
     screen \
     && dnf clean all
 
-# Enable EPEL and install Chromium for headless browser testing (npm/Karma)
+# Install Chromium for headless browser testing (npm/Karma)
+# Enable EPEL and CRB repos to get chromium and its dependencies
 RUN dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm && \
+    dnf install -y dnf-plugins-core && \
+    dnf config-manager --set-enabled crb && \
     dnf install -y chromium && \
     dnf clean all
 
