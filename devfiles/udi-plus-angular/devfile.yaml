@@ -39,6 +39,10 @@ components:
           value: /projects/.claude-config
         - name: NODE_OPTIONS
           value: --max-old-space-size=4096
+        - name: CHROME_BIN
+          value: /usr/local/bin/chrome
+        - name: CHROME_PATH
+          value: /opt/chrome-linux64/chrome
       endpoints:
         - name: angular-dev
           targetPort: 4200
