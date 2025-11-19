@@ -5,7 +5,7 @@ FROM quay.io/devfile/universal-developer-image:ubi9-latest
 
 USER root
 
-# Install Code globally
+# Install Code Assistants globally
 RUN npm install -g @anthropic-ai/claude-code
 RUN npm install -g @google/gemini-cli
 
