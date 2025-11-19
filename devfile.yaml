@@ -38,6 +38,8 @@ components:
       env:
         - name: CLAUDE_CONFIG_DIR
           value: /projects/.claude-config
+        - name: XDG_CONFIG_HOME
+          value: /projects/.config
         - name: JENKINS_URL
           value: "https://jenkins.ethosengine.com"
         - name: CHROME_BIN

@@ -37,6 +37,8 @@ components:
       env:
         - name: CLAUDE_CONFIG_DIR
           value: /projects/.claude-config
+        - name: XDG_CONFIG_HOME
+          value: /projects/.config
         - name: CHROME_BIN
           value: /usr/local/bin/chrome
         - name: CHROME_PATH

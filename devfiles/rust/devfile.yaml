@@ -41,9 +41,9 @@ components:
         - name: XDG_DATA_HOME
           value: /tmp/nix-data
         - name: XDG_STATE_HOME
-          value: /tmp/nix-state
+          value: /projects/.state
         - name: XDG_CONFIG_HOME
-          value: /tmp/nix-config
+          value: /projects/.config
         - name: NPM_CONFIG_CACHE
           value: /tmp/nix-cache/npm
         # Nix configuration - CRITICAL for Holochain development in rootless containers

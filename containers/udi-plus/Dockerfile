@@ -5,8 +5,10 @@ FROM quay.io/devfile/universal-developer-image:ubi9-latest
 
 USER root
 
-# Install Claude Code globally
+# Install Code globally
 RUN npm install -g @anthropic-ai/claude-code
+RUN npm install -g @google/gemini-cli
+
 
 # Install Java 21 via dnf
 RUN dnf install -y java-21-openjdk-headless java-21-openjdk-devel && \

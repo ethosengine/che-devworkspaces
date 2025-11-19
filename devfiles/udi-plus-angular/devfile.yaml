@@ -37,6 +37,8 @@ components:
       env:
         - name: CLAUDE_CONFIG_DIR
           value: /projects/.claude-config
+        - name: XDG_CONFIG_HOME
+          value: /projects/.config
         - name: NODE_OPTIONS
           value: --max-old-space-size=4096
         - name: CHROME_BIN
