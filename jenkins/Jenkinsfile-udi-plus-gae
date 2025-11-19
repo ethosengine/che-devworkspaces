@@ -1,4 +1,5 @@
-// UDI Plus GAE Image Pipeline
+// UDI GAE Image Pipeline (Standalone)
+// ⚠️ ARCHIVED - Manual builds only, no automatic triggers
 @Library('imagebuilder-shared') _
 
 pipeline {
@@ -53,9 +54,10 @@ spec:
         }
     }
 
+    // Disable all automatic triggers - manual builds only
+    triggers { }
+
     parameters {
-        string(name: 'BASE_TAG', defaultValue: 'latest',
-               description: 'udi-plus tag to build from')
         booleanParam(name: 'FORCE_BUILD', defaultValue: false,
                      description: 'Force rebuild')
         booleanParam(name: 'SKIP_PUSH', defaultValue: false,
@@ -71,6 +73,7 @@ spec:
             steps {
                 container('builder') {
                     script {
+                        echo "⚠️  ARCHIVED PIPELINE - Manual builds only"
                         checkout scm
                         sh 'git config --global --add safe.directory $(pwd)'
                         sh 'git clean -fdx'
@@ -87,11 +90,11 @@ spec:
                 container('builder') {
                     script {
                         def result = buildDevspaceImage(
-                            imageName: 'udi-plus-gae',
-                            dockerfile: 'containers/udi-plus/udi-plus-gae',
+                            imageName: 'udi-gae',
+                            dockerfile: 'containers/udi-gae',
                             registry: 'harbor.ethosengine.com/devspaces',
-                            baseImage: "harbor.ethosengine.com/devspaces/udi-plus:${params.BASE_TAG}",
-                            buildArgs: [BASE_TAG: params.BASE_TAG],
+                            baseImage: "quay.io/devfile/universal-developer-image:ubi9-latest",
+                            buildArgs: [:],
                             skipBaseImageCheck: true,
                             forceBuild: params.FORCE_BUILD,
                             skipPush: params.SKIP_PUSH,
@@ -114,9 +117,9 @@ spec:
                     if (env.IMAGE_TAG_DATED && env.IMAGE_TAG_GIT) {
                         sh """
                             set +e
-                            nerdctl -n k8s.io rmi harbor.ethosengine.com/devspaces/udi-plus-gae:latest 2>/dev/null || true
-                            nerdctl -n k8s.io rmi harbor.ethosengine.com/devspaces/udi-plus-gae:${IMAGE_TAG_DATED} 2>/dev/null || true
-                            nerdctl -n k8s.io rmi harbor.ethosengine.com/devspaces/udi-plus-gae:${IMAGE_TAG_GIT} 2>/dev/null || true
+                            nerdctl -n k8s.io rmi harbor.ethosengine.com/devspaces/udi-gae:latest 2>/dev/null || true
+                            nerdctl -n k8s.io rmi harbor.ethosengine.com/devspaces/udi-gae:${IMAGE_TAG_DATED} 2>/dev/null || true
+                            nerdctl -n k8s.io rmi harbor.ethosengine.com/devspaces/udi-gae:${IMAGE_TAG_GIT} 2>/dev/null || true
                         """
                     }
                 }
@@ -124,7 +127,7 @@ spec:
         }
         success {
             script {
-                echo "✅ udi-plus-gae pipeline completed: ${env.BUILD_RESULT}"
+                echo "✅ udi-gae pipeline completed: ${env.BUILD_RESULT}"
                 if (env.IMAGE_NAME) {
                     echo "Image: ${env.IMAGE_NAME}"
                 }
