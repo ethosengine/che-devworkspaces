@@ -67,6 +67,14 @@ USER user
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 ENV PATH=/usr/lib/jvm/java-21-openjdk/bin:$PATH
 
+# NOTE: VS Code CLI symlink setup
+# The base UBI image provides 'code-oss' at /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss
+# However, many tools and documentation expect 'code' as the command name.
+# Since /home is overwritten at Eclipse Che workspace startup, the symlink must be created
+# via postStart commands in devfile.yaml files (not here in the Dockerfile).
+# ⚠️ REVIEW REQUIRED: If the base quay.io/devfile/universal-developer-image:ubi9-latest changes,
+# verify the code-oss path and update both this comment and the devfile postStart commands.
+
 # Verify installation
 RUN claude --version || echo "Claude installed but needs auth"
 RUN java -version

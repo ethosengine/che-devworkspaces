@@ -47,6 +47,16 @@ components:
         - name: CHROME_PATH
           value: /opt/chrome-linux64/chrome
 commands:
+- id: setup-vscode-cli
+  exec:
+    component: tools
+    commandLine: |
+      # Create VS Code CLI symlink (code-oss -> code)
+      # ⚠️ REVIEW REQUIRED: If base UBI image changes, verify /checode path exists
+      # See containers/udi-plus/Dockerfile for details
+      mkdir -p /home/user/.local/bin
+      ln -sf /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss /home/user/.local/bin/code
+
 - id: setup-claude-mcp
   exec:
     component: tools
@@ -61,9 +71,9 @@ commands:
         --env SONARQUBE_URL="$SONARQUBE_URL" \
         -- java -jar /opt/mcp/sonarqube-mcp.jar
       claude mcp remove jenkins 2>/dev/null || true
-      
+
       export JENKINS_AUTH=$(echo -n "$JENKINS_USERNAME:$JENKINS_TOKEN" | base64)
-      
+
       # Add Jenkins MCP server using HTTP transport
       claude mcp add jenkins "$JENKINS_URL/mcp-server/mcp" \
         --transport http \
@@ -76,4 +86,5 @@ commands:
         
 events:
   postStart:
+    - setup-vscode-cli
     - setup-claude-mcp
