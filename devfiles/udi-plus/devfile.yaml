@@ -43,3 +43,18 @@ components:
           value: /usr/local/bin/chrome
         - name: CHROME_PATH
           value: /opt/chrome-linux64/chrome
+
+commands:
+  - id: setup-vscode-cli
+    exec:
+      component: tools
+      commandLine: |
+        # Create VS Code CLI symlink (code-oss -> code)
+        # ⚠️ REVIEW REQUIRED: If base UBI image changes, verify /checode path exists
+        # See containers/udi-plus/Dockerfile for details
+        mkdir -p /home/user/.local/bin
+        ln -sf /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss /home/user/.local/bin/code
+
+events:
+  postStart:
+    - setup-vscode-cli
