@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "WebFetch(domain:eclipse.dev)"
+      "WebFetch(domain:eclipse.dev)",
+      "Bash(echo:*)"
     ],
     "deny": []
   }

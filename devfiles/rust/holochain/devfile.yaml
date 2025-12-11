@@ -1,0 +1,159 @@
+schemaVersion: 2.2.0
+metadata:
+  name: elohim-devspace
+  displayName: Holochain + Angular Development Environment
+  description: >-
+    Full-stack development with Holochain (Rust/Nix) backend and Angular frontend,
+    plus Claude AI utilities
+  icon: >-
+    https://raw.githubusercontent.com/devfile/devfile-web/main/apps/landing-page/public/pwa-192x192.png
+  tags:
+    - Rust
+    - Nix
+    - Holochain
+    - Angular
+    - Node.js
+    - Java
+    - ubi10
+    - Claude
+  projectType: holochain
+  language: Polyglot
+  version: 2.0.0
+
+projects:
+  - name: che-devworkspaces
+    git:
+      remotes:
+        origin: https://github.com/ethosengine/che-devworkspaces.git
+
+components:
+  - name: tools
+    container:
+      image: harbor.ethosengine.com/devspaces/rust-nix-dev:latest
+      memoryLimit: 8Gi
+      memoryRequest: 2Gi
+      cpuLimit: '2'
+      cpuRequest: '500m'
+      mountSources: true
+      sourceMapping: /projects
+      env:
+        # Claude and general config
+        - name: CLAUDE_CONFIG_DIR
+          value: /projects/.claude-config
+        - name: USER
+          value: user
+        - name: RUST_BACKTRACE
+          value: '1'
+        # XDG directories - use /nix-xdg subdirs (persists in nix PVC)
+        - name: XDG_CACHE_HOME
+          value: /nix-xdg/cache
+        - name: XDG_DATA_HOME
+          value: /nix-xdg/data
+        - name: XDG_STATE_HOME
+          value: /nix-xdg/state
+        - name: XDG_CONFIG_HOME
+          value: /nix-xdg/config
+        - name: NPM_CONFIG_CACHE
+          value: /nix-xdg/cache/npm
+        - name: CYPRESS_CACHE_FOLDER
+          value: /nix-xdg/cache/cypress
+        # Jenkins integration
+        - name: JENKINS_URL
+          value: "https://jenkins.ethosengine.com"
+        # Chrome for Angular testing
+        - name: CHROME_BIN
+          value: /usr/local/bin/chrome
+        - name: CHROME_PATH
+          value: /opt/chrome-linux64/chrome
+      endpoints:
+        - name: angular-dev
+          targetPort: 4200
+          exposure: public
+          protocol: http
+        - name: ui-playground
+          targetPort: 4201
+          exposure: public
+          protocol: http
+        - name: hc-app
+          targetPort: 8080
+          exposure: public
+          protocol: https
+        - name: hc-admin
+          targetPort: 8888
+          exposure: internal
+      volumeMounts:
+        - name: nix-store
+          path: /nix
+        - name: nix-xdg
+          path: /nix-xdg
+        - name: cargo-cache
+          path: /home/user/.cargo
+        - name: rustup-cache
+          path: /home/user/.rustup
+
+  # Nix store volume - required for Nix/Holochain tooling
+  - name: nix-store
+    volume:
+      size: 25Gi
+  # XDG directories for Nix cache/config
+  - name: nix-xdg
+    volume:
+      size: 2Gi
+  # Cargo cache - dependency artifacts and incremental builds
+  - name: cargo-cache
+    volume:
+      size: 3Gi
+  # Rustup toolchain cache
+  - name: rustup-cache
+    volume:
+      size: 2Gi
+commands:
+  - id: setup-npm-env
+    exec:
+      component: tools
+      commandLine: |
+        echo 'export NPM_CONFIG_CACHE=/tmp/npm-cache' >> ~/.bashrc
+        source ~/.bashrc
+
+  - id: setup-vscode-cli
+    exec:
+      component: tools
+      commandLine: |
+        # Create VS Code CLI symlink (code-oss -> code)
+        # ⚠️ REVIEW REQUIRED: If base UBI image changes, verify /checode path exists
+        # See containers/udi-plus/Dockerfile for details
+        mkdir -p /home/user/.local/bin
+        ln -sf /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss /home/user/.local/bin/code
+
+  - id: setup-claude-mcp
+    exec:
+      component: tools
+      workingDir: /projects/elohim
+      commandLine: |
+        export STORAGE_PATH=/tmp/sonarqube-mcp-storage
+        mkdir -p "$STORAGE_PATH"
+        claude mcp remove sonarqube 2>/dev/null || true
+        claude mcp add sonarqube \
+          --env STORAGE_PATH="$STORAGE_PATH" \
+          --env SONARQUBE_TOKEN="$SONARQUBE_TOKEN" \
+          --env SONARQUBE_URL="$SONARQUBE_URL" \
+          -- java -jar /opt/mcp/sonarqube-mcp.jar
+        
+        claude mcp remove jenkins 2>/dev/null || true
+        
+        export JENKINS_AUTH=$(echo -n "$JENKINS_USERNAME:$JENKINS_TOKEN" | base64)
+        
+        # Add Jenkins MCP server using HTTP transport,
+        # connection might fail if the jenkins user (token owner) does not have an active oidc session
+        claude mcp add jenkins "$JENKINS_URL/mcp-server/mcp" \
+          --transport http \
+          --header "Authorization: Basic $JENKINS_AUTH" \
+          --env JENKINS_URL="$JENKINS_URL" \
+          --env JENKINS_USERNAME="$JENKINS_USERNAME" \
+          --env JENKINS_TOKEN="$JENKINS_TOKEN"      
+           
+events:
+  postStart:
+    - setup-vscode-cli
+    - setup-npm-env
+    - setup-claude-mcp
