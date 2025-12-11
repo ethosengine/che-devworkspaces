@@ -17,7 +17,7 @@ metadata:
     - Go
     - Python
     - Pip
-    - ubi9
+    - ubi10
   projectType: universal
   language: Polyglot
   version: 1.0.0
@@ -52,10 +52,13 @@ commands:
     component: tools
     commandLine: |
       # Create VS Code CLI symlink (code-oss -> code)
-      # ⚠️ REVIEW REQUIRED: If base UBI image changes, verify /checode path exists
-      # See containers/udi-plus/Dockerfile for details
+      # Try ubi10 first, fall back to ubi9 if not available
       mkdir -p /home/user/.local/bin
-      ln -sf /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss /home/user/.local/bin/code
+      if [ -f /checode/checode-linux-libc/ubi10/bin/remote-cli/code-oss ]; then
+        ln -sf /checode/checode-linux-libc/ubi10/bin/remote-cli/code-oss /home/user/.local/bin/code
+      elif [ -f /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss ]; then
+        ln -sf /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss /home/user/.local/bin/code
+      fi
 
 - id: setup-claude-mcp
   exec:

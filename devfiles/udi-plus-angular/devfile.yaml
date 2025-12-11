@@ -14,7 +14,7 @@ metadata:
     - Java
     - Claude
     - Maven
-    - ubi9
+    - ubi10
   projectType: angular
   language: TypeScript
   version: 1.0.0

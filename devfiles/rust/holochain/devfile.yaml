@@ -37,6 +37,13 @@ components:
       mountSources: true
       sourceMapping: /projects
       env:
+        # Rust toolchain (installed to /opt/rust in container image)
+        - name: RUSTUP_HOME
+          value: /opt/rust/rustup
+        - name: CARGO_HOME
+          value: /opt/rust/cargo
+        - name: PATH
+          value: /opt/rust/cargo/bin:/opt/holochain/bin:/home/user/bin:${PATH}
         # Claude and general config
         - name: CLAUDE_CONFIG_DIR
           value: /projects/.claude-config
@@ -82,29 +89,19 @@ components:
           targetPort: 8888
           exposure: internal
       volumeMounts:
+        # Nix store - only needed if using optional Nix tooling
         - name: nix-store
           path: /nix
+        # XDG directories for caches/config
         - name: nix-xdg
           path: /nix-xdg
-        - name: cargo-cache
-          path: /home/user/.cargo
-        - name: rustup-cache
-          path: /home/user/.rustup
 
-  # Nix store volume - required for Nix/Holochain tooling
+  # Nix store volume - only needed if using optional Nix tooling (init-nix)
   - name: nix-store
     volume:
-      size: 25Gi
-  # XDG directories for Nix cache/config
+      size: 10Gi
+  # XDG directories for caches/config
   - name: nix-xdg
-    volume:
-      size: 2Gi
-  # Cargo cache - dependency artifacts and incremental builds
-  - name: cargo-cache
-    volume:
-      size: 3Gi
-  # Rustup toolchain cache
-  - name: rustup-cache
     volume:
       size: 2Gi
 commands:
@@ -120,10 +117,13 @@ commands:
       component: tools
       commandLine: |
         # Create VS Code CLI symlink (code-oss -> code)
-        # ⚠️ REVIEW REQUIRED: If base UBI image changes, verify /checode path exists
-        # See containers/udi-plus/Dockerfile for details
+        # Try ubi10 first, fall back to ubi9 if not available
         mkdir -p /home/user/.local/bin
-        ln -sf /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss /home/user/.local/bin/code
+        if [ -f /checode/checode-linux-libc/ubi10/bin/remote-cli/code-oss ]; then
+          ln -sf /checode/checode-linux-libc/ubi10/bin/remote-cli/code-oss /home/user/.local/bin/code
+        elif [ -f /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss ]; then
+          ln -sf /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss /home/user/.local/bin/code
+        fi
 
   - id: setup-claude-mcp
     exec:

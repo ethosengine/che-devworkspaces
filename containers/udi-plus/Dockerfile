@@ -4,14 +4,24 @@
 # UBI10 provides GCC 14.2 with GLIBCXX_3.4.32, needed for pre-built Holochain binaries (require 3.4.30)
 # RHEL 10 released May 2025, based on Fedora 40, supported until 2035
 # See: https://lwn.net/Articles/1021827/
-FROM quay.io/devfile/universal-developer-image:ubi10-latest
+#
+# NOTE: Using base-developer-image (not universal-developer-image) because ubi10-latest
+# only exists for base. The base image (~800MB) lacks languages/tools that universal has (~8.75GB):
+#   - Languages: Java, Node.js, Python, Go, Rust, .NET, PHP, C/C++, Scala
+#   - Cloud tools: kubectl, helm, terraform, oc, docker-compose
+#   - Build tools: Maven, Gradle
+# We install what we need below.
+FROM quay.io/devfile/base-developer-image:ubi10-latest
 
 USER root
+
+# Install Node.js (required for npm-based tools like claude-code, gemini-cli)
+# Using NodeSource for latest LTS
+RUN dnf install -y nodejs npm && dnf clean all
 
 # Install Code Assistants globally
 RUN npm install -g @anthropic-ai/claude-code
 RUN npm install -g @google/gemini-cli
-
 
 # Install Java 21 via dnf
 RUN dnf install -y java-21-openjdk-headless java-21-openjdk-devel && \
@@ -33,13 +43,13 @@ RUN dnf install -y \
 
 # Install Chrome for Testing (Google's official distribution for automated testing)
 # Provides a stable, headless-capable Chrome binary for npm/Karma tests
-RUN dnf install -y wget unzip && \
+# Note: wget is already in base image, just need unzip temporarily
+RUN dnf install -y unzip && \
     wget -q https://storage.googleapis.com/chrome-for-testing-public/131.0.6778.87/linux64/chrome-linux64.zip && \
     unzip -q chrome-linux64.zip -d /opt/ && \
     rm chrome-linux64.zip && \
     ln -s /opt/chrome-linux64/chrome /usr/local/bin/chrome && \
     ln -s /opt/chrome-linux64/chrome /usr/local/bin/google-chrome && \
-    dnf remove -y wget unzip && \
     dnf clean all
 
 # Install Chrome runtime dependencies for graphics rendering
@@ -71,12 +81,11 @@ ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 ENV PATH=/usr/lib/jvm/java-21-openjdk/bin:$PATH
 
 # NOTE: VS Code CLI symlink setup
-# The base UBI image provides 'code-oss' at /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss
-# However, many tools and documentation expect 'code' as the command name.
+# The Che editor provides 'code-oss' at /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss
+# (path may change with ubi10). Many tools expect 'code' as the command name.
 # Since /home is overwritten at Eclipse Che workspace startup, the symlink must be created
 # via postStart commands in devfile.yaml files (not here in the Dockerfile).
-# ⚠️ REVIEW REQUIRED: If the base quay.io/devfile/universal-developer-image:ubi9-latest changes,
-# verify the code-oss path and update both this comment and the devfile postStart commands.
+# ⚠️ REVIEW REQUIRED: With ubi10 base image, verify the code-oss path still works.
 
 # Verify installation
 RUN claude --version || echo "Claude installed but needs auth"
