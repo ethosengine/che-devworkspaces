@@ -2,17 +2,20 @@
 # podman push harbor.ethosengine.com/devspaces/rust-nix-dev:latest
 
 # ============================================================================
-# Rust + Nix Development Container for Eclipse Che/DevSpaces
+# Rust + Nix + Holochain Development Container for Eclipse Che/DevSpaces
 # ============================================================================
 #
 # CRITICAL: This image is designed for Eclipse Che/DevSpaces where:
 # - PVCs completely REPLACE mounted directories (e.g., /nix becomes empty)
 # - Containers run with arbitrary UIDs (not necessarily 1000)
-# - UDI-plus provides DevSpaces integration, Claude Code, Java 21, etc.
+# - UDI-plus (UBI10) provides DevSpaces integration, Claude Code, Java 21, etc.
 #
 # Architecture:
-# - BUILD TIME: Install system deps, scripts, cached installers
+# - BUILD TIME: Install system deps, scripts, cached installers, holochain binaries
 # - RUNTIME: Install Nix/Rust to /nix (on PVC) during first terminal
+#
+# Holochain binaries are pre-downloaded at build time and work because UBI10
+# provides GLIBCXX_3.4.32 (holochain binaries require 3.4.30)
 # ============================================================================
 
 FROM harbor.ethosengine.com/devspaces/udi-plus:latest
@@ -39,6 +42,28 @@ RUN dnf install -y \
 RUN curl -L https://nixos.org/nix/install -o /tmp/nix-installer.sh && \
     chmod +x /tmp/nix-installer.sh
 
+# ============================================================================
+# Holochain binaries (pre-built, requires UBI10 for GLIBCXX_3.4.30)
+# ============================================================================
+# Download pre-built holochain binaries from official releases
+# These work on UBI10 because it provides GLIBCXX_3.4.32 via GCC 14.2
+# IMPORTANT: Install to /opt/holochain (not /home/user) because Che overwrites
+# the home directory with PVC mounts at workspace startup
+ARG HOLOCHAIN_VERSION=0.6.0
+ARG LAIR_VERSION=0.5.3
+RUN mkdir -p /opt/holochain/bin && \
+    curl -sL -o /opt/holochain/bin/holochain \
+      "https://github.com/holochain/holochain/releases/download/holochain-${HOLOCHAIN_VERSION}/holochain-x86_64-unknown-linux-gnu" && \
+    curl -sL -o /opt/holochain/bin/hc \
+      "https://github.com/holochain/holochain/releases/download/holochain-${HOLOCHAIN_VERSION}/hc-x86_64-unknown-linux-gnu" && \
+    curl -sL -o /opt/holochain/bin/hcterm \
+      "https://github.com/holochain/holochain/releases/download/holochain-${HOLOCHAIN_VERSION}/hcterm-x86_64-unknown-linux-gnu" && \
+    curl -sL -o /opt/holochain/bin/lair-keystore \
+      "https://github.com/holochain/lair/releases/download/lair_keystore-v${LAIR_VERSION}/lair-keystore-v${LAIR_VERSION}-x86_64-unknown-linux-gnu" && \
+    chmod +x /opt/holochain/bin/* && \
+    chown -R user:root /opt/holochain && \
+    chmod -R g=u /opt/holochain
+
 # Create init-nix script (runs at RUNTIME, not build time)
 # This will be called by .bashrc on first terminal open
 RUN mkdir -p /home/user/bin && \
@@ -47,15 +72,9 @@ RUN mkdir -p /home/user/bin && \
     echo '' >> /home/user/bin/init-nix && \
     echo 'echo "🔧 Initializing Nix environment..."' >> /home/user/bin/init-nix && \
     echo '' >> /home/user/bin/init-nix && \
-    echo '# Set XDG directories to use /tmp (ephemeral, doesn'"'"'t consume PVC)' >> /home/user/bin/init-nix && \
-    echo 'export XDG_CACHE_HOME=${XDG_CACHE_HOME:-/tmp/nix-cache}' >> /home/user/bin/init-nix && \
-    echo 'export XDG_DATA_HOME=${XDG_DATA_HOME:-/tmp/nix-data}' >> /home/user/bin/init-nix && \
-    echo 'export XDG_STATE_HOME=${XDG_STATE_HOME:-/tmp/nix-state}' >> /home/user/bin/init-nix && \
-    echo 'export XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-/tmp/nix-config}' >> /home/user/bin/init-nix && \
-    echo 'export NPM_CONFIG_CACHE=${XDG_CACHE_HOME}/npm' >> /home/user/bin/init-nix && \
-    echo '' >> /home/user/bin/init-nix && \
-    echo '# Create directories' >> /home/user/bin/init-nix && \
-    echo 'mkdir -p "$XDG_CACHE_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_CONFIG_HOME" "$NPM_CONFIG_CACHE"' >> /home/user/bin/init-nix && \
+    echo '# XDG directories are set by devfile.yaml env vars (injected by Kubernetes)' >> /home/user/bin/init-nix && \
+    echo '# Just ensure they exist' >> /home/user/bin/init-nix && \
+    echo 'mkdir -p "${XDG_CACHE_HOME:-/tmp/cache}" "${XDG_DATA_HOME:-/tmp/data}" "${XDG_STATE_HOME:-/tmp/state}" "${XDG_CONFIG_HOME:-/tmp/config}"' >> /home/user/bin/init-nix && \
     echo '' >> /home/user/bin/init-nix && \
     echo '# CRITICAL FIX: Marker file in /nix (persists in PVC across restarts)' >> /home/user/bin/init-nix && \
     echo '# Using versioned marker to allow forced re-initialization if needed' >> /home/user/bin/init-nix && \
@@ -270,18 +289,13 @@ RUN echo '' >> /home/user/.bashrc && \
     echo '# Rust-Nix DevSpace Configuration' >> /home/user/.bashrc && \
     echo '# ============================================================================' >> /home/user/.bashrc && \
     echo '' >> /home/user/.bashrc && \
-    echo '# Add user bin to PATH' >> /home/user/.bashrc && \
-    echo 'export PATH=/home/user/bin:$PATH' >> /home/user/.bashrc && \
+    echo '# PATH is now set by devfile.yaml env vars (works in all contexts)' >> /home/user/.bashrc && \
+    echo '# This fallback ensures interactive shells still work if devfile PATH is missing' >> /home/user/.bashrc && \
+    echo 'export PATH="/opt/holochain/bin:/home/user/bin:$PATH"' >> /home/user/.bashrc && \
     echo '' >> /home/user/.bashrc && \
-    echo '# Set XDG directories to use /tmp (ephemeral, doesn'"'"'t consume PVC)' >> /home/user/.bashrc && \
-    echo 'export XDG_CACHE_HOME=${XDG_CACHE_HOME:-/tmp/nix-cache}' >> /home/user/.bashrc && \
-    echo 'export XDG_DATA_HOME=${XDG_DATA_HOME:-/tmp/nix-data}' >> /home/user/.bashrc && \
-    echo 'export XDG_STATE_HOME=${XDG_STATE_HOME:-/tmp/nix-state}' >> /home/user/.bashrc && \
-    echo 'export XDG_CONFIG_HOME=${XDG_CONFIG_HOME:-/tmp/nix-config}' >> /home/user/.bashrc && \
-    echo 'export NPM_CONFIG_CACHE=${XDG_CACHE_HOME}/npm' >> /home/user/.bashrc && \
-    echo '' >> /home/user/.bashrc && \
-    echo '# Create XDG directories' >> /home/user/.bashrc && \
-    echo 'mkdir -p "$XDG_CACHE_HOME" "$XDG_DATA_HOME" "$XDG_STATE_HOME" "$XDG_CONFIG_HOME" "$NPM_CONFIG_CACHE"' >> /home/user/.bashrc && \
+    echo '# XDG directories are set by devfile.yaml env vars (injected by Kubernetes)' >> /home/user/.bashrc && \
+    echo '# Just ensure they exist for interactive shells' >> /home/user/.bashrc && \
+    echo 'mkdir -p "${XDG_CACHE_HOME:-/tmp/cache}" "${XDG_DATA_HOME:-/tmp/data}" "${XDG_STATE_HOME:-/tmp/state}" "${XDG_CONFIG_HOME:-/tmp/config}"' >> /home/user/.bashrc && \
     echo '' >> /home/user/.bashrc && \
     echo '# CRITICAL FIX: Recreate nix-profile symlink if missing (after workspace restart)' >> /home/user/.bashrc && \
     echo 'if [ -f /nix/.initialized-v4 ] && [ ! -L "$HOME/.nix-profile" ]; then' >> /home/user/.bashrc && \
@@ -316,19 +330,19 @@ RUN echo '' >> /home/user/.bashrc && \
     echo '    fi' >> /home/user/.bashrc && \
     echo 'fi' >> /home/user/.bashrc && \
     echo '' >> /home/user/.bashrc && \
-    echo '# Holochain helper functions' >> /home/user/.bashrc && \
-    echo 'holo-scaffold() {' >> /home/user/.bashrc && \
-    echo '    nix run "github:holochain/holonix?ref=main-0.5#hc-scaffold" -- "$@"' >> /home/user/.bashrc && \
-    echo '}' >> /home/user/.bashrc && \
-    echo '' >> /home/user/.bashrc && \
-    echo 'holo-new-project() {' >> /home/user/.bashrc && \
-    echo '    echo "Available templates: web-app, vanilla, lit, svelte, react, vue, headless"' >> /home/user/.bashrc && \
-    echo '    echo "Usage: holo-scaffold web-app my-app-name"' >> /home/user/.bashrc && \
-    echo '}' >> /home/user/.bashrc && \
-    echo '' >> /home/user/.bashrc && \
-    echo 'holo-test() {' >> /home/user/.bashrc && \
-    echo '    echo "🧪 Testing Holochain scaffolding setup..."' >> /home/user/.bashrc && \
-    echo '    nix run --refresh "github:holochain/holonix?ref=main-0.5#hc-scaffold" -- --version' >> /home/user/.bashrc && \
+    echo '# Holochain helper: show scaffolding commands' >> /home/user/.bashrc && \
+    echo 'holo-help() {' >> /home/user/.bashrc && \
+    echo '    echo "Holochain CLI tools (pre-built binaries in /opt/holochain/bin):"' >> /home/user/.bashrc && \
+    echo '    echo ""' >> /home/user/.bashrc && \
+    echo '    echo "  holochain --version    # Conductor version"' >> /home/user/.bashrc && \
+    echo '    echo "  hc --version           # CLI version"' >> /home/user/.bashrc && \
+    echo '    echo "  lair-keystore --help   # Key management"' >> /home/user/.bashrc && \
+    echo '    echo ""' >> /home/user/.bashrc && \
+    echo '    echo "Scaffolding (P2P Shipyard / DarkSoil):"' >> /home/user/.bashrc && \
+    echo '    echo "  hc scaffold            # Interactive scaffolding"' >> /home/user/.bashrc && \
+    echo '    echo "  hc scaffold web-app    # Create new web app"' >> /home/user/.bashrc && \
+    echo '    echo ""' >> /home/user/.bashrc && \
+    echo '    echo "Templates: vanilla, lit, svelte, react, vue, headless"' >> /home/user/.bashrc && \
     echo '}' >> /home/user/.bashrc
 
 # Fix permissions for arbitrary UID (Che requirement)

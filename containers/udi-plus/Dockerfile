@@ -1,7 +1,10 @@
 #podman build --pull --no-cache -t harbor.ethosengine.com/devspaces/udi-plus:latest .
 #podman push harbor.ethosengine.com/devspaces/udi-plus:latest
 
-FROM quay.io/devfile/universal-developer-image:ubi9-latest
+# UBI10 provides GCC 14.2 with GLIBCXX_3.4.32, needed for pre-built Holochain binaries (require 3.4.30)
+# RHEL 10 released May 2025, based on Fedora 40, supported until 2035
+# See: https://lwn.net/Articles/1021827/
+FROM quay.io/devfile/universal-developer-image:ubi10-latest
 
 USER root
 
