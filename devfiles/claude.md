@@ -49,16 +49,18 @@ env:
     value: /home/user/bin:${PATH}
 ```
 
-#### Rust/Cargo Development
+#### Rust/Cargo Development (rust-nix-dev image)
+
+For the `rust-nix-dev` image, Rust is installed to `/opt/rust` to survive PVC mounts:
 
 ```yaml
 env:
-  - name: PATH
-    value: /home/user/.cargo/bin:${PATH}
-  - name: CARGO_HOME
-    value: /home/user/.cargo
   - name: RUSTUP_HOME
-    value: /home/user/.rustup
+    value: /opt/rust/rustup
+  - name: CARGO_HOME
+    value: /opt/rust/cargo
+  - name: PATH
+    value: /opt/rust/cargo/bin:/opt/holochain/bin:/home/user/bin:${PATH}
 ```
 
 #### Nix Package Manager

@@ -111,3 +111,50 @@ source /home/user/.bashrc && echo $PATH
 | devfile `env` | Yes | Yes | Yes | Yes |
 
 **Always use devfile `env` section for critical PATH and environment variables.**
+
+## Dockerfile Syntax Guidelines
+
+### DO NOT Use Heredocs in Dockerfiles
+
+Heredoc syntax (`<< 'EOF'` or `<< 'SCRIPT'`) does NOT work in Dockerfiles. The Docker parser will interpret lines after the heredoc delimiter as Dockerfile instructions, causing errors like:
+
+```
+error: unknown instruction: echo
+```
+
+**BAD - Will fail:**
+```dockerfile
+RUN cat > /home/user/bin/script << 'EOF'
+#!/bin/bash
+echo "Hello"
+EOF
+```
+
+**GOOD - Use echo chains:**
+```dockerfile
+RUN echo '#!/bin/bash' > /home/user/bin/script && \
+    echo 'echo "Hello"' >> /home/user/bin/script && \
+    chmod +x /home/user/bin/script
+```
+
+**GOOD - Use COPY for complex scripts:**
+```dockerfile
+COPY scripts/my-script.sh /home/user/bin/my-script
+RUN chmod +x /home/user/bin/my-script
+```
+
+### Script Generation Pattern
+
+When generating scripts in Dockerfiles, use the echo-append pattern:
+
+```dockerfile
+RUN echo '#!/bin/bash' > /path/to/script && \
+    echo 'line 1' >> /path/to/script && \
+    echo 'line 2' >> /path/to/script && \
+    chmod +x /path/to/script
+```
+
+For escaping single quotes within the script, use `'\''`:
+```dockerfile
+RUN echo 'echo "It'\''s working"' >> /path/to/script
+```
