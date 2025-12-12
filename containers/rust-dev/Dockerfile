@@ -56,8 +56,12 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
 # Install common Rust components
 RUN rustup component add rust-analyzer rustfmt clippy
 
+# Install WASM target for Holochain DNA/zome compilation
+RUN rustup target add wasm32-unknown-unknown
+
 # Verify Rust installation
-RUN rustc --version && cargo --version && rust-analyzer --version
+RUN rustc --version && cargo --version && rust-analyzer --version && \
+    rustup target list --installed | grep wasm32
 
 USER root
 
