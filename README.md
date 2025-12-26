@@ -67,5 +67,6 @@ This repository provides:
   - Universal polyglot workspace with multiple language support
   - Specialized Rust development environment with cargo tools and persistent caches
 - **Eclipse Che Integration**: Seamlessly deployable workspaces for cloud-native development
+- **MCP Server Integration**: Pre-configured [SonarQube and Jenkins MCP servers](MCP_SETUP.md) for Claude Code
 
 All images provide instant, reproducible development environments for various programming languages and frameworks.

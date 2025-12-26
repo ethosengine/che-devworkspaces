@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "WebFetch(domain:eclipse.dev)",
-      "Bash(echo:*)"
+      "Bash(echo:*)",
+      "WebFetch(domain:developer.holochain.org)",
+      "WebSearch",
+      "WebFetch(domain:docs.sonarsource.com)",
+      "Bash(cat:*)",
+      "WebFetch(domain:plugins.jenkins.io)",
+      "Bash(curl:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
   }

@@ -70,7 +70,9 @@ RUN mkdir -p /home/user/.claude \
  && chmod -R 775 /home/user/.claude /home/user/.cache /opt/mcp
 
 # Download SonarQube MCP JAR
-ARG SONAR_MCP_VERSION=0.0.8.1353
+# See: https://github.com/SonarSource/sonarqube-mcp-server/releases
+# Docs: https://docs.sonarsource.com/sonarqube-mcp-server/build-and-configure/environment-variables
+ARG SONAR_MCP_VERSION=1.5.0.1706
 RUN curl -fL -o /opt/mcp/sonarqube-mcp.jar \
   "https://github.com/SonarSource/sonarqube-mcp-server/releases/download/${SONAR_MCP_VERSION}/sonarqube-mcp-server-${SONAR_MCP_VERSION}.jar"
 

@@ -83,6 +83,47 @@ env:
     value: /projects/.npmrc
 ```
 
+### Directory Usage Constraints (Eclipse Che / Dev Containers)
+
+**⚠️ CRITICAL FOR MCP SERVERS AND TOOLS**: When configuring any tool that stores data, be aware of these Eclipse Che constraints:
+
+**Directories that DO NOT persist (ephemeral):**
+- `/home/user/` - Overwritten on workspace restart
+- `/home/user/.cache/` - Lost on restart
+- `/home/user/.config/` - Lost on restart
+- `/tmp/` - Cleared on restart
+- Any directory not explicitly mounted to a PVC
+
+**Directories that DO persist:**
+- `/projects/` - Default PVC mount point
+- `/projects/.config/` - Use for XDG_CONFIG_HOME
+- `/projects/.cache/` - Use for XDG_CACHE_HOME
+- `/projects/.claude-config/` - Claude Code settings
+- Any directory explicitly mounted to a PVC via devfile
+
+**MCP Server Storage Example (SonarQube):**
+```yaml
+# ❌ WRONG - /tmp is ephemeral, data lost on restart
+export STORAGE_PATH=/tmp/sonarqube-mcp-storage
+
+# ❌ WRONG - /home/user is overwritten on restart
+export STORAGE_PATH=/home/user/.cache/sonarqube-mcp
+
+# ✅ CORRECT - /projects persists across restarts
+export STORAGE_PATH=/projects/.sonarqube-mcp
+```
+
+**Where to set environment variables:**
+- **Dockerfile**: For build-time only or defaults that can be overridden
+- **devfile.yaml**: For runtime environment variables (preferred for persistence paths)
+- Devfile env vars override Dockerfile ENV directives
+
+**Why this matters:**
+1. MCP servers may cache authentication tokens, project data, or state
+2. Build tool caches (Maven, npm, pip) benefit from persistence
+3. IDE extensions may store settings in these directories
+4. Losing data on restart wastes time and bandwidth re-downloading
+
 ## Platform Overview
 
 - **Eclipse Che**: Open-source Kubernetes-native IDE platform

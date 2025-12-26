@@ -216,3 +216,127 @@ To push to a different registry, update the `registry` parameter in each pipelin
 Modify the `triggers.cron` in `Jenkinsfile-udi-plus` to change when automatic base image checks occur.
 
 Default: `0 2 * * *` (2 AM daily)
+
+## MCP Server Plugin Configuration
+
+The [Jenkins MCP Server plugin](https://plugins.jenkins.io/mcp-server/) enables Claude Code to interact with Jenkins directly through the Model Context Protocol.
+
+### Plugin Installation
+
+1. Go to **Manage Jenkins** → **Plugins** → **Available plugins**
+2. Search for "MCP Server"
+3. Install and restart Jenkins
+
+The plugin automatically exposes endpoints at `/mcp-server/mcp` (HTTP), `/mcp-server/sse` (SSE), and `/mcp-server/message`.
+
+### OIDC Authentication Requirement
+
+**Important:** If Jenkins uses OIDC authentication (OpenID Connect), API tokens will not work by default. The OIDC plugin requires an active browser session for token authentication.
+
+To enable API token access for MCP and other scripted clients:
+
+**Via Jenkins Configuration as Code (JCasC):**
+```yaml
+jenkins:
+  securityRealm:
+    oic:
+      allowTokenAccessWithoutOicSession: true
+```
+
+**Via UI:**
+1. Go to **Manage Jenkins** → **Security**
+2. Under Security Realm (OpenID Connect), enable **"Allow API token access without OIC session"**
+
+This allows service accounts like `claude` to authenticate via API token without maintaining an active browser login.
+
+### MCP Client Configuration
+
+The devfile configures Claude Code MCP automatically on workspace start. Manual configuration:
+
+```bash
+# Generate base64 credentials
+JENKINS_AUTH=$(echo -n "username:api-token" | base64)
+
+# Add Jenkins MCP server
+claude mcp add jenkins "https://jenkins.example.com/mcp-server/mcp" \
+  --transport http \
+  --header "Authorization: Basic $JENKINS_AUTH"
+```
+
+### Kubernetes Secret for Credentials
+
+Jenkins credentials are injected into workspaces via Kubernetes Secrets with Eclipse Che automount labels. The devfile references `$JENKINS_USERNAME` and `$JENKINS_TOKEN` environment variables that must be provided by a secret.
+
+> **Tip:** You can combine Jenkins and SonarQube credentials in a single secret. See [MCP_SETUP.md](../MCP_SETUP.md) for the combined approach.
+
+**Create the secret in your user namespace:**
+
+```bash
+# Create secret with Jenkins credentials
+kubectl create secret generic jenkins-mcp-credentials \
+  --from-literal=JENKINS_USERNAME=claude \
+  --from-literal=JENKINS_TOKEN=<your-jenkins-api-token> \
+  -n <your-che-user-namespace> \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# Add automount labels and annotation
+kubectl label secret jenkins-mcp-credentials \
+  controller.devfile.io/mount-to-devworkspace=true \
+  controller.devfile.io/watch-secret=true \
+  -n <your-che-user-namespace>
+
+kubectl annotate secret jenkins-mcp-credentials \
+  controller.devfile.io/mount-as=env \
+  -n <your-che-user-namespace>
+```
+
+**Or apply this YAML directly:**
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: jenkins-mcp-credentials
+  labels:
+    controller.devfile.io/mount-to-devworkspace: 'true'
+    controller.devfile.io/watch-secret: 'true'
+  annotations:
+    controller.devfile.io/mount-as: 'env'
+type: Opaque
+stringData:
+  JENKINS_USERNAME: claude
+  JENKINS_TOKEN: <your-jenkins-api-token>
+```
+
+The secret keys become environment variables in all workspace containers. After creating/updating the secret, restart your workspace for changes to take effect.
+
+**To get your Jenkins API token:**
+1. Log into Jenkins
+2. Click your username → Configure
+3. Under "API Token", click "Add new Token"
+4. Copy the generated token (it won't be shown again)
+
+### Available MCP Tools
+
+Once connected, Claude Code can:
+- **getJobs** / **getJob** - List and inspect Jenkins jobs
+- **triggerBuild** - Start builds with parameters
+- **getBuild** / **getBuildLog** - Get build status and logs
+- **searchBuildLog** - Search through build logs
+- **getJobScm** / **getBuildScm** - Get SCM/git information
+- **whoAmI** / **getStatus** - Check authentication and Jenkins health
+
+### Troubleshooting MCP Connection
+
+**Connection fails with 401 Unauthorized:**
+- Verify API token is correct and not expired
+- Check if `allowTokenAccessWithoutOicSession` is enabled (for OIDC)
+- Ensure user has necessary Jenkins permissions
+
+**Connection fails with 404:**
+- MCP Server plugin is not installed
+
+**Check MCP status:**
+```bash
+claude mcp list
+```

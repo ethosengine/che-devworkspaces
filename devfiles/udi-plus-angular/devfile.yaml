@@ -39,6 +39,8 @@ components:
           value: /projects/.claude-config
         - name: XDG_CONFIG_HOME
           value: /projects/.config
+        - name: XDG_CACHE_HOME
+          value: /projects/.cache
         - name: NODE_OPTIONS
           value: --max-old-space-size=4096
         - name: CHROME_BIN

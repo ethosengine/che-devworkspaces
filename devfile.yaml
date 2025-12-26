@@ -40,12 +40,19 @@ components:
           value: /projects/.claude-config
         - name: XDG_CONFIG_HOME
           value: /projects/.config
+        - name: XDG_CACHE_HOME
+          value: /projects/.cache
         - name: JENKINS_URL
           value: "https://jenkins.ethosengine.com"
         - name: CHROME_BIN
           value: /usr/local/bin/chrome
         - name: CHROME_PATH
           value: /opt/chrome-linux64/chrome
+        # SonarQube MCP configuration (SONARQUBE_TOKEN comes from K8s secret)
+        - name: STORAGE_PATH
+          value: /projects/.sonarqube-mcp
+        - name: SONARQUBE_URL
+          value: "https://sonarqube.ethosengine.com"
 commands:
 - id: setup-vscode-cli
   exec:
@@ -65,28 +72,25 @@ commands:
     component: tools
     workingDir: /projects/che-devworkspaces
     commandLine: |
-      export STORAGE_PATH=/tmp/sonarqube-mcp-storage
+      # Create persistent storage directory for SonarQube MCP
       mkdir -p "$STORAGE_PATH"
+
+      # Configure SonarQube MCP (env vars from devfile, SONARQUBE_TOKEN from K8s secret)
       claude mcp remove sonarqube 2>/dev/null || true
       claude mcp add sonarqube \
         --env STORAGE_PATH="$STORAGE_PATH" \
         --env SONARQUBE_TOKEN="$SONARQUBE_TOKEN" \
         --env SONARQUBE_URL="$SONARQUBE_URL" \
         -- java -jar /opt/mcp/sonarqube-mcp.jar
+      # Configure Jenkins MCP (requires mcp-server plugin and allowTokenAccessWithoutOicSession)
       claude mcp remove jenkins 2>/dev/null || true
+      if [ -n "$JENKINS_USERNAME" ] && [ -n "$JENKINS_TOKEN" ]; then
+        JENKINS_AUTH=$(echo -n "$JENKINS_USERNAME:$JENKINS_TOKEN" | base64)
+        claude mcp add jenkins "$JENKINS_URL/mcp-server/mcp" \
+          --transport http \
+          --header "Authorization: Basic $JENKINS_AUTH"
+      fi
 
-      export JENKINS_AUTH=$(echo -n "$JENKINS_USERNAME:$JENKINS_TOKEN" | base64)
-
-      # Add Jenkins MCP server using HTTP transport
-      claude mcp add jenkins "$JENKINS_URL/mcp-server/mcp" \
-        --transport http \
-        --header "Authorization: Basic $JENKINS_AUTH" \
-        --env JENKINS_URL="$JENKINS_URL" \
-        --env JENKINS_USERNAME="$JENKINS_USERNAME" \
-        --env JENKINS_TOKEN="$JENKINS_TOKEN"      
-
-
-        
 events:
   postStart:
     - setup-vscode-cli
