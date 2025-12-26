@@ -52,13 +52,17 @@ commands:
       component: tools
       commandLine: |
         # Create VS Code CLI symlink (code-oss -> code)
-        # Try ubi10 first, fall back to ubi9 if not available
+        # checode only ships ubi8/ubi9 binaries, use ubi9 (forward compatible with ubi10)
         mkdir -p /home/user/.local/bin
-        if [ -f /checode/checode-linux-libc/ubi10/bin/remote-cli/code-oss ]; then
-          ln -sf /checode/checode-linux-libc/ubi10/bin/remote-cli/code-oss /home/user/.local/bin/code
-        elif [ -f /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss ]; then
+        if [ -f /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss ]; then
           ln -sf /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss /home/user/.local/bin/code
         fi
+
+        # Link ~/.claude to persistent config dir for VS Code extension IDE detection
+        # The extension uses ~/.claude/ide for IPC sockets, must match CLAUDE_CONFIG_DIR
+        rm -rf /home/user/.claude 2>/dev/null || true
+        ln -sf "$CLAUDE_CONFIG_DIR" /home/user/.claude
+        mkdir -p /home/user/.claude/ide
 
 events:
   postStart:

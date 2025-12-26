@@ -62,12 +62,14 @@ RUN dnf install -y \
 ENV CHROME_BIN=/usr/local/bin/chrome
 ENV CHROME_PATH=/opt/chrome-linux64/chrome
 
-# Create Claude + MCP dirs and make them user-writable
-RUN mkdir -p /home/user/.claude \
-           /home/user/.cache/sonarqube-mcp \
+# Create MCP dirs and make them user-writable
+# NOTE: Do NOT create /home/user/.claude here - it must be a symlink to $CLAUDE_CONFIG_DIR
+# for the VS Code extension IDE detection to work. The devfile postStart creates this symlink.
+# Creating a directory here causes permission issues with arbitrary UIDs in Eclipse Che.
+RUN mkdir -p /home/user/.cache/sonarqube-mcp \
            /opt/mcp \
- && chown -R user:user /home/user/.claude /home/user/.cache /opt/mcp \
- && chmod -R 775 /home/user/.claude /home/user/.cache /opt/mcp
+ && chown -R user:root /home/user/.cache /opt/mcp \
+ && chmod -R g=u /home/user/.cache /opt/mcp
 
 # Download SonarQube MCP JAR
 # See: https://github.com/SonarSource/sonarqube-mcp-server/releases
@@ -82,12 +84,15 @@ USER user
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk
 ENV PATH=/usr/lib/jvm/java-21-openjdk/bin:$PATH
 
-# NOTE: VS Code CLI symlink setup
-# The Che editor provides 'code-oss' at /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss
-# (path may change with ubi10). Many tools expect 'code' as the command name.
-# Since /home is overwritten at Eclipse Che workspace startup, the symlink must be created
-# via postStart commands in devfile.yaml files (not here in the Dockerfile).
-# ⚠️ REVIEW REQUIRED: With ubi10 base image, verify the code-oss path still works.
+# NOTE: VS Code CLI and Claude extension setup (must be done in devfile postStart)
+# 1. VS Code CLI: checode only ships ubi8/ubi9 binaries. The ubi9 binary at
+#    /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss works on ubi10 (forward compatible).
+#    Symlink: /home/user/.local/bin/code -> code-oss
+# 2. Claude extension IDE detection: The extension uses ~/.claude/ide for IPC sockets.
+#    Symlink: /home/user/.claude -> $CLAUDE_CONFIG_DIR (for persistent storage)
+# Both symlinks must be created at runtime via devfile postStart because:
+#   - /home can be overwritten by PVC mounts at workspace startup
+#   - $CLAUDE_CONFIG_DIR value is only known at runtime
 
 # Verify installation
 RUN claude --version || echo "Claude installed but needs auth"
