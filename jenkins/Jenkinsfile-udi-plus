@@ -84,6 +84,56 @@ spec:
             }
         }
 
+        stage('Version Report') {
+            steps {
+                container('builder') {
+                    script {
+                        def img = 'harbor.ethosengine.com/devspaces/udi-plus'
+                        echo '═══════════════════════════════════════════'
+                        echo '           VERSION REPORT'
+                        echo '═══════════════════════════════════════════'
+
+                        // Capture versions from current latest image
+                        def previousVersions = ''
+                        try {
+                            sh "nerdctl -n k8s.io pull ${img}:latest 2>/dev/null || true"
+                            previousVersions = sh(
+                                script: """
+                                    nerdctl -n k8s.io run --rm ${img}:latest bash -c '
+                                        echo "=== PREVIOUS IMAGE VERSIONS ==="
+                                        echo "Claude: \$(claude --version 2>/dev/null || echo N/A)"
+                                        echo "Gemini: \$(gemini --version 2>/dev/null || echo N/A)"
+                                        echo "Node: \$(node --version 2>/dev/null || echo N/A)"
+                                        echo "npm: \$(npm --version 2>/dev/null || echo N/A)"
+                                        echo "Java: \$(java -version 2>&1 | head -1)"
+                                        echo "Chrome: \$(google-chrome --version 2>/dev/null || echo N/A)"
+                                        echo "Git: \$(git --version 2>/dev/null || echo N/A)"
+                                    ' 2>/dev/null || echo 'No previous image available'
+                                """,
+                                returnStdout: true
+                            ).trim()
+                        } catch (err) {
+                            previousVersions = 'No previous image available for comparison'
+                        }
+                        echo previousVersions
+
+                        // Save version info to file for build summary
+                        writeFile file: 'version-report.txt', text: """
+Build Date: ${new Date().format('yyyy-MM-dd HH:mm:ss')}
+Build Number: ${env.BUILD_NUMBER}
+Branch: ${env.BRANCH_NAME ?: 'main'}
+
+${previousVersions}
+
+New versions will be reported after build completion.
+"""
+                        archiveArtifacts artifacts: 'version-report.txt',
+                            allowEmptyArchive: true
+                    }
+                }
+            }
+        }
+
         stage('Build & Push') {
             steps {
                 container('builder') {
@@ -104,7 +154,7 @@ spec:
 
                         // Trigger downstream builds if this was updated
                         if (!result.skipped && !params.SKIP_PUSH) {
-                            echo "✅ udi-plus updated - triggering downstream builds"
+                            echo 'udi-plus updated - triggering downstream builds'
                             build job: 'devspaces-rust-nix-dev', wait: false
                             build job: 'devspaces-udi-plus-angular', wait: false
                             build job: 'devspaces-udi-plus-gae', wait: false
@@ -119,22 +169,62 @@ spec:
         always {
             container('builder') {
                 script {
+                    def img = 'harbor.ethosengine.com/devspaces/udi-plus'
                     if (env.IMAGE_TAG_DATED && env.IMAGE_TAG_GIT) {
                         sh """
                             set +e
-                            nerdctl -n k8s.io rmi harbor.ethosengine.com/devspaces/udi-plus:latest 2>/dev/null || true
-                            nerdctl -n k8s.io rmi harbor.ethosengine.com/devspaces/udi-plus:${IMAGE_TAG_DATED} 2>/dev/null || true
-                            nerdctl -n k8s.io rmi harbor.ethosengine.com/devspaces/udi-plus:${IMAGE_TAG_GIT} 2>/dev/null || true
+                            nerdctl -n k8s.io rmi ${img}:latest 2>/dev/null || true
+                            nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_DATED} 2>/dev/null || true
+                            nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_GIT} 2>/dev/null || true
                         """
                     }
                 }
             }
         }
         success {
-            script {
-                echo "✅ udi-plus pipeline completed: ${env.BUILD_RESULT}"
-                if (env.IMAGE_NAME) {
-                    echo "Image: ${env.IMAGE_NAME}"
+            container('builder') {
+                script {
+                    echo "udi-plus pipeline completed: ${env.BUILD_RESULT}"
+                    if (env.IMAGE_NAME) {
+                        echo "Image: ${env.IMAGE_NAME}"
+                    }
+
+                    // Report new versions from built image
+                    if (env.BUILD_RESULT != 'SKIPPED' && env.IMAGE_NAME) {
+                        echo '═══════════════════════════════════════════'
+                        echo '         NEW IMAGE VERSIONS'
+                        echo '═══════════════════════════════════════════'
+                        def newVersions = sh(
+                            script: """
+                                nerdctl -n k8s.io run --rm ${env.IMAGE_NAME} bash -c '
+                                    echo "Claude: \$(claude --version 2>/dev/null || echo N/A)"
+                                    echo "Gemini: \$(gemini --version 2>/dev/null || echo N/A)"
+                                    echo "Node: \$(node --version 2>/dev/null || echo N/A)"
+                                    echo "npm: \$(npm --version 2>/dev/null || echo N/A)"
+                                    echo "Java: \$(java -version 2>&1 | head -1)"
+                                    echo "Chrome: \$(google-chrome --version 2>/dev/null || echo N/A)"
+                                    echo "Git: \$(git --version 2>/dev/null || echo N/A)"
+                                    if [ -f /opt/mcp/sonarqube-mcp.jar ]; then
+                                        echo "SonarQube MCP: installed"
+                                    else
+                                        echo "SonarQube MCP: N/A"
+                                    fi
+                                ' 2>/dev/null || echo 'Could not retrieve versions'
+                            """,
+                            returnStdout: true
+                        ).trim()
+                        echo newVersions
+
+                        // Append new versions to report
+                        def report = readFile('version-report.txt')
+                        writeFile file: 'version-report.txt', text: """${report}
+
+=== NEW IMAGE VERSIONS ===
+${newVersions}
+"""
+                        archiveArtifacts artifacts: 'version-report.txt',
+                            allowEmptyArchive: true
+                    }
                 }
             }
         }

@@ -1,0 +1,20 @@
+{
+  "extends": "recommended",
+  "rules": {
+    "UnusedVariable": {
+      "ignoreVariableNames": "_"
+    },
+    "VariableName": {
+      "ignoreVariableNames": "_"
+    },
+    "NestedBlockDepth": {
+      "maxNestedBlockDepth": 8
+    },
+    "CompileStatic": "off",
+    "NoDef": "off",
+    "VariableTypeRequired": "off",
+    "DuplicateStringLiteral": "off",
+    "DuplicateMapLiteral": "off",
+    "UnnecessaryGString": "info"
+  }
+}

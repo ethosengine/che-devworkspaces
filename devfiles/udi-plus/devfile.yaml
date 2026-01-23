@@ -58,11 +58,28 @@ commands:
           ln -sf /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss /home/user/.local/bin/code
         fi
 
-        # Link ~/.claude to persistent config dir for VS Code extension IDE detection
-        # The extension uses ~/.claude/ide for IPC sockets, must match CLAUDE_CONFIG_DIR
+        # === Claude Code Persistence Setup ===
+        # Claude Code has known issues with CLAUDE_CONFIG_DIR (partially respected):
+        # - VS Code extension hardcodes ~/.claude/ide/ for IPC sockets
+        # - CLI uses $CLAUDE_CONFIG_DIR/ide/ for IPC socket detection
+        # - ~/.claude.json is hardcoded to home directory (ignores CLAUDE_CONFIG_DIR)
+        # See: https://github.com/anthropics/claude-code/issues/4739
+        # See: https://github.com/anthropics/claude-code/issues/3833
+        #
+        # Our solution: Symlink ~/.claude -> $CLAUDE_CONFIG_DIR so both paths resolve
+        # to the same persistent location on /projects PVC.
+
+        # Ensure persistent config directory exists
+        mkdir -p "$CLAUDE_CONFIG_DIR"
+        mkdir -p "$CLAUDE_CONFIG_DIR/ide"
+
+        # Remove any existing ~/.claude (dir or file) and create symlink
         rm -rf /home/user/.claude 2>/dev/null || true
         ln -sf "$CLAUDE_CONFIG_DIR" /home/user/.claude
-        mkdir -p /home/user/.claude/ide
+
+        # Symlink ~/.claude.json -> persistent location (hardcoded file, not in ~/.claude/)
+        rm -f /home/user/.claude.json 2>/dev/null || true
+        ln -sf "$CLAUDE_CONFIG_DIR/.claude.json" /home/user/.claude.json
 
 events:
   postStart:

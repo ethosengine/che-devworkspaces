@@ -69,7 +69,22 @@ env:
     value: /projects/.claude-config
 ```
 
-This pattern allows Claude Code's MCP server configurations and settings to persist between workspace restarts without requiring an additional volume mount for `/home/user`.
+**⚠️ CLAUDE_CONFIG_DIR Known Issues:**
+Claude Code's `CLAUDE_CONFIG_DIR` environment variable has [known bugs](https://github.com/anthropics/claude-code/issues/3833):
+- `~/.claude.json` is hardcoded to home directory (ignores the variable)
+- VS Code extension hardcodes `~/.claude/ide/` for IPC sockets
+- CLI uses `$CLAUDE_CONFIG_DIR/ide/` for IPC socket detection (path mismatch)
+
+**Our Workaround:** The devfile postStart creates symlinks to bridge these paths:
+```bash
+# Directory symlink - fixes IDE socket detection
+ln -sf "$CLAUDE_CONFIG_DIR" /home/user/.claude
+
+# File symlink - fixes hardcoded .claude.json location
+ln -sf "$CLAUDE_CONFIG_DIR/.claude.json" /home/user/.claude.json
+```
+
+This ensures both the extension and CLI write/read from the same persistent location.
 
 **Other common patterns:**
 ```yaml

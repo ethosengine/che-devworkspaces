@@ -15,13 +15,24 @@ FROM quay.io/devfile/base-developer-image:ubi10-latest
 
 USER root
 
-# Install Node.js (required for npm-based tools like claude-code, gemini-cli)
+# Install Node.js (required for npm-based tools like gemini-cli)
 # Using NodeSource for latest LTS
 RUN dnf install -y nodejs npm && dnf clean all
 
-# Install Code Assistants globally
-RUN npm install -g @anthropic-ai/claude-code
+# Install Gemini CLI globally via npm
 RUN npm install -g @google/gemini-cli
+
+# Install Claude Code using native installer (installs to /home/user/.claude/bin)
+# Run as user since installer expects home directory access
+USER user
+RUN curl -fsSL https://claude.ai/install.sh | bash
+USER root
+
+# Move Claude binary to /usr/local/bin so it survives the devfile postStart
+# which symlinks ~/.claude -> $CLAUDE_CONFIG_DIR for persistent config storage
+RUN cp /home/user/.claude/bin/claude /usr/local/bin/claude && \
+    chmod +x /usr/local/bin/claude && \
+    rm -rf /home/user/.claude
 
 # Install Java 21 via dnf
 RUN dnf install -y java-21-openjdk-headless java-21-openjdk-devel && \
@@ -66,6 +77,7 @@ ENV CHROME_PATH=/opt/chrome-linux64/chrome
 # NOTE: Do NOT create /home/user/.claude here - it must be a symlink to $CLAUDE_CONFIG_DIR
 # for the VS Code extension IDE detection to work. The devfile postStart creates this symlink.
 # Creating a directory here causes permission issues with arbitrary UIDs in Eclipse Che.
+# The Claude binary is installed to /usr/local/bin (not ~/.claude/bin) for the same reason.
 RUN mkdir -p /home/user/.cache/sonarqube-mcp \
            /opt/mcp \
  && chown -R user:root /home/user/.cache /opt/mcp \
@@ -88,12 +100,25 @@ ENV PATH=/usr/lib/jvm/java-21-openjdk/bin:$PATH
 # 1. VS Code CLI: checode only ships ubi8/ubi9 binaries. The ubi9 binary at
 #    /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss works on ubi10 (forward compatible).
 #    Symlink: /home/user/.local/bin/code -> code-oss
-# 2. Claude extension IDE detection: The extension uses ~/.claude/ide for IPC sockets.
-#    Symlink: /home/user/.claude -> $CLAUDE_CONFIG_DIR (for persistent storage)
+#
+# 2. Claude Code persistence (CLAUDE_CONFIG_DIR has known issues):
+#    - VS Code extension hardcodes ~/.claude/ide/ for IPC sockets
+#    - CLI uses $CLAUDE_CONFIG_DIR/ide/ for IPC socket detection
+#    - ~/.claude.json is hardcoded to home directory (ignores CLAUDE_CONFIG_DIR)
+#    See: https://github.com/anthropics/claude-code/issues/4739
+#    See: https://github.com/anthropics/claude-code/issues/3833
+#
+#    Solution: Symlinks created in devfile postStart:
+#    - ~/.claude -> $CLAUDE_CONFIG_DIR (directory)
+#    - ~/.claude.json -> $CLAUDE_CONFIG_DIR/.claude.json (hardcoded file)
+#
 # Both symlinks must be created at runtime via devfile postStart because:
 #   - /home can be overwritten by PVC mounts at workspace startup
 #   - $CLAUDE_CONFIG_DIR value is only known at runtime
+#
+# 3. Claude binary is installed to /usr/local/bin (system-wide) rather than ~/.claude/bin
+#    because the postStart symlinks ~/.claude for config persistence.
 
 # Verify installation
-RUN claude --version || echo "Claude installed but needs auth"
+RUN claude --version
 RUN java -version

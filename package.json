@@ -1,0 +1,11 @@
+{
+  "name": "che-devworkspaces",
+  "private": true,
+  "scripts": {
+    "lint": "npm-groovy-lint --path jenkins/",
+    "lint:fix": "npm-groovy-lint --path jenkins/ --fix"
+  },
+  "devDependencies": {
+    "npm-groovy-lint": "^16.1.1"
+  }
+}
