@@ -23,7 +23,8 @@ RUN dnf install -y nodejs npm && dnf clean all
 RUN npm install -g @google/gemini-cli
 
 # Install Claude Code using native installer (installs to /home/user/.claude/bin)
-# Run as user since installer expects home directory access
+# Create cache directory first (installer needs it)
+RUN mkdir -p /home/user/.cache && chown user:root /home/user/.cache
 USER user
 RUN curl -fsSL https://claude.ai/install.sh | bash
 USER root
