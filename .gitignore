@@ -1,2 +1,5 @@
 # Claude Code configuration (workspace-specific)
 .claude-config/
+
+# Node.js
+node_modules/
