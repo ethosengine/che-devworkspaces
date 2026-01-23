@@ -22,18 +22,25 @@ RUN dnf install -y nodejs npm && dnf clean all
 # Install Gemini CLI globally via npm
 RUN npm install -g @google/gemini-cli
 
-# Install Claude Code using native installer (installs to /home/user/.claude/bin)
-# Create cache directory first (installer needs it)
-RUN mkdir -p /home/user/.cache && chown user:root /home/user/.cache
+# Install Claude Code using native installer
+# Create required directories first (installer needs .cache and .local/bin)
+RUN mkdir -p /home/user/.cache /home/user/.local/bin && \
+    chown -R user:root /home/user/.cache /home/user/.local
 USER user
 RUN curl -fsSL https://claude.ai/install.sh | bash
 USER root
 
-# Move Claude binary to /usr/local/bin so it survives the devfile postStart
+# Find and move Claude binary to /usr/local/bin so it survives the devfile postStart
 # which symlinks ~/.claude -> $CLAUDE_CONFIG_DIR for persistent config storage
-RUN cp /home/user/.claude/bin/claude /usr/local/bin/claude && \
-    chmod +x /usr/local/bin/claude && \
-    rm -rf /home/user/.claude
+# The installer may put it in ~/.local/bin or ~/.claude/bin depending on version
+RUN CLAUDE_BIN=$(find /home/user -name 'claude' -type f -executable 2>/dev/null | head -1) && \
+    if [ -n "$CLAUDE_BIN" ]; then \
+        cp "$CLAUDE_BIN" /usr/local/bin/claude && \
+        chmod +x /usr/local/bin/claude; \
+    else \
+        echo "ERROR: Claude binary not found after installation" && exit 1; \
+    fi && \
+    rm -rf /home/user/.claude /home/user/.local/bin/claude
 
 # Install Java 21 via dnf
 RUN dnf install -y java-21-openjdk-headless java-21-openjdk-devel && \
