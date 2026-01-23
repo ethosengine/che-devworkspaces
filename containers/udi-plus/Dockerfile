@@ -22,25 +22,8 @@ RUN dnf install -y nodejs npm && dnf clean all
 # Install Gemini CLI globally via npm
 RUN npm install -g @google/gemini-cli
 
-# Install Claude Code using native installer
-# Create required directories first (installer needs .cache and .local/bin)
-RUN mkdir -p /home/user/.cache /home/user/.local/bin && \
-    chown -R user:root /home/user/.cache /home/user/.local
-USER user
-RUN curl -fsSL https://claude.ai/install.sh | bash
-USER root
-
-# Find and move Claude binary to /usr/local/bin so it survives the devfile postStart
-# which symlinks ~/.claude -> $CLAUDE_CONFIG_DIR for persistent config storage
-# The installer may put it in ~/.local/bin or ~/.claude/bin depending on version
-RUN CLAUDE_BIN=$(find /home/user -name 'claude' -type f -executable 2>/dev/null | head -1) && \
-    if [ -n "$CLAUDE_BIN" ]; then \
-        cp "$CLAUDE_BIN" /usr/local/bin/claude && \
-        chmod +x /usr/local/bin/claude; \
-    else \
-        echo "ERROR: Claude binary not found after installation" && exit 1; \
-    fi && \
-    rm -rf /home/user/.claude /home/user/.local/bin/claude
+# Install Claude Code via npm (native installer has issues in container builds)
+RUN npm install -g @anthropic-ai/claude-code
 
 # Install Java 21 via dnf
 RUN dnf install -y java-21-openjdk-headless java-21-openjdk-devel && \
@@ -124,8 +107,8 @@ ENV PATH=/usr/lib/jvm/java-21-openjdk/bin:$PATH
 #   - /home can be overwritten by PVC mounts at workspace startup
 #   - $CLAUDE_CONFIG_DIR value is only known at runtime
 #
-# 3. Claude binary is installed to /usr/local/bin (system-wide) rather than ~/.claude/bin
-#    because the postStart symlinks ~/.claude for config persistence.
+# 3. Claude is installed globally via npm, so the binary is in the npm global bin path.
+#    The postStart symlinks ~/.claude for config persistence.
 
 # Verify installation
 RUN claude --version
