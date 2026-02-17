@@ -36,6 +36,10 @@ RUN dnf install -y \
     pkg-config \
     && dnf clean all
 
+# Install just command runner
+RUN curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh \
+    | bash -s -- --to /usr/local/bin
+
 # ============================================================================
 # Rust toolchain (installed to /opt/rust to survive PVC mounts)
 # ============================================================================
