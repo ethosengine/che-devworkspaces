@@ -193,6 +193,86 @@ def call(Map config) {
         echo "✅ Security scan initiated for ${config.imageName}"
     }
 
+    // Clean up old images from Harbor (keep latest + 3 most recent dated tags)
+    if (!skipPush) {
+        echo "=== Cleaning up old ${config.imageName} images from Harbor ==="
+
+        def project = registry.split('/').last()
+        def keepCount = 3
+
+        withCredentials([usernamePassword(
+            credentialsId: 'harbor-robot-registry',
+            passwordVariable: 'HARBOR_PASSWORD',
+            usernameVariable: 'HARBOR_USERNAME'
+        )]) {
+            try {
+                def artifactsJson = sh(
+                    script: """
+                        AUTH_HEADER="Authorization: Basic \$(echo -n "\$HARBOR_USERNAME:\$HARBOR_PASSWORD" | base64)"
+
+                        wget -q \\
+                          --header="accept: application/json" \\
+                          --header="\$AUTH_HEADER" \\
+                          -O- \\
+                          "https://harbor.ethosengine.com/api/v2.0/projects/${project}/repositories/${config.imageName}/artifacts?page_size=100&with_tag=true"
+                    """,
+                    returnStdout: true
+                ).trim()
+
+                def artifacts = readJSON text: artifactsJson
+
+                // Collect dated tags (YYYY-MM-DD format) with their push times
+                def datedArtifacts = []
+                for (artifact in artifacts) {
+                    if (!artifact.tags) continue
+                    def tags = artifact.tags.collect { it.name }
+                    def datedTag = tags.find { it ==~ /\d{4}-\d{2}-\d{2}/ }
+                    if (datedTag) {
+                        datedArtifacts.add([
+                            digest: artifact.digest,
+                            datedTag: datedTag,
+                            tags: tags,
+                            pushTime: artifact.push_time
+                        ])
+                    }
+                }
+
+                // Sort by dated tag descending (newest first)
+                datedArtifacts.sort { a, b -> b.datedTag <=> a.datedTag }
+
+                if (datedArtifacts.size() > keepCount) {
+                    def toDelete = datedArtifacts.drop(keepCount)
+                    echo "Found ${datedArtifacts.size()} dated versions, keeping ${keepCount}, deleting ${toDelete.size()}"
+
+                    for (old in toDelete) {
+                        // Skip if this artifact also carries the 'latest' tag
+                        if (old.tags.contains('latest')) {
+                            echo "Skipping ${old.datedTag} (also tagged as latest)"
+                            continue
+                        }
+                        echo "Deleting old artifact: ${old.tags.join(', ')} (digest: ${old.digest})"
+                        sh """
+                            AUTH_HEADER="Authorization: Basic \$(echo -n "\$HARBOR_USERNAME:\$HARBOR_PASSWORD" | base64)"
+
+                            wget --method=DELETE -q \\
+                              --header="accept: application/json" \\
+                              --header="\$AUTH_HEADER" \\
+                              -O- \\
+                              "https://harbor.ethosengine.com/api/v2.0/projects/${project}/repositories/${config.imageName}/artifacts/\$(echo '${old.digest}' | sed 's/:/%3A/g')" || \\
+                            echo "Warning: Failed to delete ${old.datedTag}"
+                        """
+                    }
+
+                    echo "✅ Old ${config.imageName} images cleaned up from Harbor"
+                } else {
+                    echo "Only ${datedArtifacts.size()} dated versions found, nothing to clean up"
+                }
+            } catch (err) {
+                echo "⚠️  Harbor cleanup failed (non-fatal): ${err.message}"
+            }
+        }
+    }
+
     // Return build info
     return [
         skipped: false,
