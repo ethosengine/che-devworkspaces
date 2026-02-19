@@ -64,6 +64,11 @@ RUN dnf install -y \
 ENV CHROME_BIN=/usr/local/bin/chrome
 ENV CHROME_PATH=/opt/chrome-linux64/chrome
 
+# Install kubeconform for Kubernetes manifest validation
+ARG KUBECONFORM_VERSION=v0.7.0
+RUN curl -sL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" | tar xz -C /usr/local/bin && \
+    kubeconform -v
+
 # Create MCP dirs and make them user-writable
 # NOTE: Do NOT create /home/user/.claude here - it must be a symlink to $CLAUDE_CONFIG_DIR
 # for the VS Code extension IDE detection to work. The devfile postStart creates this symlink.
