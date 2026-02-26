@@ -59,6 +59,11 @@ components:
         - name: SONARQUBE_URL
           value: "https://sonarqube.ethosengine.com"
   - name: buildkitd
+    attributes:
+      container-overrides:
+        securityContext:
+          runAsUser: 0
+          runAsNonRoot: false
     container:
       image: moby/buildkit:v0.12.5
       memoryLimit: 2G

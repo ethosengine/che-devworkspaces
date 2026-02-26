@@ -51,6 +51,11 @@ components:
         - name: BUILDKIT_HOST
           value: unix:///run/buildkit/buildkitd.sock
   - name: buildkitd
+    attributes:
+      container-overrides:
+        securityContext:
+          runAsUser: 0
+          runAsNonRoot: false
     container:
       image: moby/buildkit:v0.12.5
       memoryLimit: 2G
