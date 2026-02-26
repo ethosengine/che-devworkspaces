@@ -9,7 +9,25 @@
       "Bash(cat:*)",
       "WebFetch(domain:plugins.jenkins.io)",
       "Bash(curl:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(/home/user/.local/bin/code:*)",
+      "Bash(env)",
+      "Bash(ldd:*)",
+      "Bash(/checode/checode-linux-libc/ubi9/node:*)",
+      "Bash(code:*)",
+      "Bash(claude config list:*)",
+      "Bash(claude /editor)",
+      "Bash(claude settings:*)",
+      "Bash(find:*)",
+      "Bash(/checode/remote/extensions/anthropic.claude-code-2.0.75-linux-x64/resources/native-binary/claude:*)",
+      "Bash(claude mcp list:*)",
+      "Bash(git -C /projects/che-devworkspaces status)",
+      "Bash(git -C /projects/che-devworkspaces diff --stat)",
+      "Bash(git -C /projects/che-devworkspaces log --oneline -3)",
+      "Bash(git -C /projects/che-devworkspaces add containers/udi-plus/Dockerfile devfile.yaml devfiles/rust/devfile.yaml devfiles/rust/holochain/devfile.yaml devfiles/udi-plus-angular/devfile.yaml devfiles/udi-plus/devfile.yaml)",
+      "Bash(git -C /projects/che-devworkspaces push)",
+      "Bash(timeout 5 java:*)",
+      "WebFetch(domain:jenkins.ethosengine.com)"
     ],
     "deny": []
   }

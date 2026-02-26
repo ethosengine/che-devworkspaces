@@ -60,8 +60,9 @@ components:
           value: "https://sonarqube.ethosengine.com"
   - name: buildkitd
     attributes:
-      container-overrides:
+      controller.devfile.io/container-overrides: |
         securityContext:
+          privileged: true
           runAsUser: 0
           runAsNonRoot: false
     container:
@@ -85,6 +86,10 @@ commands:
   exec:
     component: tools
     commandLine: |
+
+      # Install/update Claude Code via native installer (always gets latest version)
+      curl -fsSL https://claude.ai/install.sh | bash
+
       # Create VS Code CLI symlink (code-oss -> code)
       # checode only ships ubi8/ubi9 binaries, use ubi9 (forward compatible with ubi10)
       mkdir -p /home/user/.local/bin
@@ -99,6 +104,8 @@ commands:
       rm -rf /home/user/.claude 2>/dev/null || true
       ln -sf "$CLAUDE_CONFIG_DIR" /home/user/.claude
       mkdir -p /home/user/.claude/ide
+
+
 
 
 
@@ -130,4 +137,4 @@ commands:
 events:
   postStart:
     - setup-vscode-cli
-    - setup-claude-mcp
+#    - setup-claude-mcp
