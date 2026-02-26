@@ -15,15 +15,11 @@ FROM quay.io/devfile/base-developer-image:ubi10-latest
 
 USER root
 
-# Install Node.js (required for npm-based tools like gemini-cli)
-# Using NodeSource for latest LTS
+# Install Node.js for npm-based project tooling
 RUN dnf install -y nodejs npm && dnf clean all
 
-# Install Gemini CLI globally via npm
-RUN npm install -g @google/gemini-cli
-
-# Install Claude Code via npm (native installer has issues in container builds)
-RUN npm install -g @anthropic-ai/claude-code
+# Claude Code is installed via native installer at workspace startup (devfile postStart)
+# This ensures the latest version using the official supported install path.
 
 # Install Java 21 via dnf
 RUN dnf install -y java-21-openjdk-headless java-21-openjdk-devel && \
@@ -84,7 +80,7 @@ RUN curl -fsSL "https://github.com/containerd/nerdctl/releases/download/v${NERDC
 # NOTE: Do NOT create /home/user/.claude here - it must be a symlink to $CLAUDE_CONFIG_DIR
 # for the VS Code extension IDE detection to work. The devfile postStart creates this symlink.
 # Creating a directory here causes permission issues with arbitrary UIDs in Eclipse Che.
-# The Claude binary is installed to /usr/local/bin (not ~/.claude/bin) for the same reason.
+# Claude Code is installed at runtime via the native installer (devfile postStart).
 RUN mkdir -p /home/user/.cache/sonarqube-mcp \
            /opt/mcp \
  && chown -R user:root /home/user/.cache /opt/mcp \
@@ -123,9 +119,9 @@ ENV PATH=/usr/lib/jvm/java-21-openjdk/bin:$PATH
 #   - /home can be overwritten by PVC mounts at workspace startup
 #   - $CLAUDE_CONFIG_DIR value is only known at runtime
 #
-# 3. Claude is installed globally via npm, so the binary is in the npm global bin path.
-#    The postStart symlinks ~/.claude for config persistence.
+# 3. Claude Code is installed at workspace startup via the native installer
+#    (curl -fsSL https://claude.ai/install.sh | bash) which places the binary
+#    in ~/.local/bin/claude. The postStart symlinks ~/.claude for config persistence.
 
 # Verify installation
-RUN claude --version
 RUN java -version

@@ -92,11 +92,16 @@ commands:
         ln -sf /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss /home/user/.local/bin/code
       fi
 
+      # === Claude Code Setup ===
       # Link ~/.claude to persistent config dir for VS Code extension IDE detection
       # The extension uses ~/.claude/ide for IPC sockets, must match CLAUDE_CONFIG_DIR
+      mkdir -p "$CLAUDE_CONFIG_DIR"
       rm -rf /home/user/.claude 2>/dev/null || true
       ln -sf "$CLAUDE_CONFIG_DIR" /home/user/.claude
       mkdir -p /home/user/.claude/ide
+
+
+
 
 - id: setup-claude-mcp
   exec:
