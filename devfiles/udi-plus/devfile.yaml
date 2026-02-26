@@ -34,6 +34,9 @@ components:
       memoryLimit: 4G
       memoryRequest: 1G
       mountSources: true
+      volumeMounts:
+        - name: buildkit-socket
+          path: /run/buildkit
       env:
         - name: CLAUDE_CONFIG_DIR
           value: /projects/.claude-config
@@ -45,6 +48,25 @@ components:
           value: /usr/local/bin/chrome
         - name: CHROME_PATH
           value: /opt/chrome-linux64/chrome
+        - name: BUILDKIT_HOST
+          value: unix:///run/buildkit/buildkitd.sock
+  - name: buildkitd
+    container:
+      image: moby/buildkit:v0.12.5
+      memoryLimit: 2G
+      memoryRequest: 512Mi
+      command: ['buildkitd']
+      args:
+        - '--addr'
+        - 'unix:///run/buildkit/buildkitd.sock'
+        - '--oci-worker=true'
+        - '--containerd-worker=false'
+      volumeMounts:
+        - name: buildkit-socket
+          path: /run/buildkit
+  - name: buildkit-socket
+    volume:
+      ephemeral: true
 
 commands:
   - id: setup-vscode-cli

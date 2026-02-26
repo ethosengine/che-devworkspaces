@@ -69,6 +69,17 @@ ARG KUBECONFORM_VERSION=v0.7.0
 RUN curl -sL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" | tar xz -C /usr/local/bin && \
     kubeconform -v
 
+# Install nerdctl + buildctl for local container image builds via BuildKit sidecar
+# Versions match ci-builder image for consistency
+ARG NERDCTL_VERSION=1.7.7
+ARG BUILDKIT_VERSION=0.12.5
+RUN curl -fsSL "https://github.com/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/nerdctl-${NERDCTL_VERSION}-linux-amd64.tar.gz" | \
+    tar -xz -C /usr/local/bin/ nerdctl && \
+    curl -fsSL "https://github.com/moby/buildkit/releases/download/v${BUILDKIT_VERSION}/buildkit-v${BUILDKIT_VERSION}.linux-amd64.tar.gz" | \
+    tar -xz -C /tmp/ && \
+    mv /tmp/bin/buildctl /usr/local/bin/ && \
+    rm -rf /tmp/bin
+
 # Create MCP dirs and make them user-writable
 # NOTE: Do NOT create /home/user/.claude here - it must be a symlink to $CLAUDE_CONFIG_DIR
 # for the VS Code extension IDE detection to work. The devfile postStart creates this symlink.
