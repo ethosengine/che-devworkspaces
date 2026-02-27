@@ -108,8 +108,6 @@ commands:
 
 
 
-
-
 - id: setup-claude-mcp
   exec:
     component: tools

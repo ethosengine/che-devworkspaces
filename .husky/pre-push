@@ -1,0 +1,13 @@
+echo "Running pre-push linting..."
+
+# Lint Dockerfiles
+echo "Linting Dockerfiles..."
+find containers -name 'Dockerfile*' | xargs hadolint
+
+# Lint YAML files
+echo "Linting YAML..."
+yamllint -c .yamllint.yml devfile.yaml devfiles/
+
+# Validate devfile schemas
+echo "Validating devfile schemas..."
+find . -name 'devfile.yaml' -not -path './node_modules/*' | xargs check-jsonschema --schemafile https://raw.githubusercontent.com/devfile/api/v2.2.0/schemas/latest/devfile.json --regex-variant python

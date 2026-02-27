@@ -2,10 +2,15 @@
   "name": "che-devworkspaces",
   "private": true,
   "scripts": {
+    "prepare": "husky",
     "lint": "npm-groovy-lint --path jenkins/",
-    "lint:fix": "npm-groovy-lint --path jenkins/ --fix"
+    "lint:fix": "npm-groovy-lint --path jenkins/ --fix",
+    "lint:docker": "find containers -name 'Dockerfile*' | xargs hadolint",
+    "lint:yaml": "yamllint -c .yamllint.yml devfile.yaml devfiles/",
+    "lint:devfile": "find . -name 'devfile.yaml' -not -path './node_modules/*' | xargs check-jsonschema --schemafile https://raw.githubusercontent.com/devfile/api/v2.2.0/schemas/latest/devfile.json --regex-variant python"
   },
   "devDependencies": {
+    "husky": "^9",
     "npm-groovy-lint": "^16.1.1"
   }
 }

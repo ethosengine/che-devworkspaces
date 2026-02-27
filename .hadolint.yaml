@@ -1,0 +1,14 @@
+ignored:
+  - DL3003  # Use WORKDIR to switch to a directory - legacy GAE Dockerfiles
+  - DL3007  # Using latest tag - intentional for internal base images
+  - DL3008  # Pin versions in apt-get - not practical for system packages
+  - DL3013  # Pin versions in pip - not practical for dev tooling
+  - DL3015  # Avoid additional packages by specifying --no-install-recommends - not needed
+  - DL3016  # Pin versions in npm - not practical for dev tooling
+  - DL3041  # Avoid dnf clean all separately - we do this intentionally per-layer
+  - DL3047  # Avoid use of wget without progress bar - noise for small downloads
+  - DL3059  # Multiple consecutive RUN instructions - intentional for readability
+  - DL4001  # Either use Wget or Curl but not both - both are needed
+  - DL4006  # Set SHELL -o pipefail - not needed for UBI images with bash
+  - SC2016  # Expressions don't expand in single quotes - intentional in echo scripts
+  - SC2046  # Quote this to prevent word splitting - legacy GAE Dockerfiles

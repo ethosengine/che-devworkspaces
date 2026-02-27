@@ -1,0 +1,14 @@
+extends: default
+rules:
+  document-start: disable
+  indentation:
+    spaces: 2
+    indent-sequences: whatever
+  line-length:
+    max: 200
+  truthy:
+    check-keys: false
+  empty-lines:
+    max: 5
+  trailing-spaces: enable
+  new-line-at-end-of-file: enable

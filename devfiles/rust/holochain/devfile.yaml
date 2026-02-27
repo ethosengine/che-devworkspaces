@@ -142,7 +142,7 @@ commands:
           --env SONARQUBE_TOKEN="$SONARQUBE_TOKEN" \
           --env SONARQUBE_URL="$SONARQUBE_URL" \
           -- java -jar /opt/mcp/sonarqube-mcp.jar
-        
+
         # Configure Jenkins MCP (requires mcp-server plugin and allowTokenAccessWithoutOicSession)
         claude mcp remove jenkins 2>/dev/null || true
         if [ -n "$JENKINS_USERNAME" ] && [ -n "$JENKINS_TOKEN" ]; then

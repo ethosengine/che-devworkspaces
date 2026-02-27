@@ -65,6 +65,16 @@ ARG KUBECONFORM_VERSION=v0.7.0
 RUN curl -sL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" | tar xz -C /usr/local/bin && \
     kubeconform -v
 
+# Install hadolint for Dockerfile linting
+ARG HADOLINT_VERSION=v2.12.0
+RUN curl -sL -o /usr/local/bin/hadolint \
+    "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-Linux-x86_64" && \
+    chmod +x /usr/local/bin/hadolint
+
+# Install yamllint and check-jsonschema for YAML/devfile validation
+# pip3 binary not available in UBI10 base; use python3 -m pip
+RUN python3 -m ensurepip && python3 -m pip install --no-cache-dir yamllint check-jsonschema
+
 # Install nerdctl + buildctl for local container image builds via BuildKit sidecar
 # Versions match ci-builder image for consistency
 ARG NERDCTL_VERSION=1.7.7
