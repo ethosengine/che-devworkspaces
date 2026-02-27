@@ -87,9 +87,6 @@ commands:
     component: tools
     commandLine: |
 
-      # Install/update Claude Code via native installer (always gets latest version)
-      curl -fsSL https://claude.ai/install.sh | bash
-
       # Create VS Code CLI symlink (code-oss -> code)
       # checode only ships ubi8/ubi9 binaries, use ubi9 (forward compatible with ubi10)
       mkdir -p /home/user/.local/bin

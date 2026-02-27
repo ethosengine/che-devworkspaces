@@ -18,8 +18,9 @@ USER root
 # Install Node.js for npm-based project tooling
 RUN dnf install -y nodejs npm && dnf clean all
 
-# Claude Code is installed via native installer at workspace startup (devfile postStart)
-# This ensures the latest version using the official supported install path.
+# Install Claude Code globally via npm (installs to /usr/local/bin/claude)
+# Native installer puts binary in ~/.local/bin which gets wiped by PVC mounts in Che
+RUN npm install -g @anthropic-ai/claude-code
 
 # Install Java 21 via dnf
 RUN dnf install -y java-21-openjdk-headless java-21-openjdk-devel && \
@@ -90,7 +91,6 @@ RUN curl -fsSL "https://github.com/containerd/nerdctl/releases/download/v${NERDC
 # NOTE: Do NOT create /home/user/.claude here - it must be a symlink to $CLAUDE_CONFIG_DIR
 # for the VS Code extension IDE detection to work. The devfile postStart creates this symlink.
 # Creating a directory here causes permission issues with arbitrary UIDs in Eclipse Che.
-# Claude Code is installed at runtime via the native installer (devfile postStart).
 RUN mkdir -p /home/user/.cache/sonarqube-mcp \
            /opt/mcp \
  && chown -R user:root /home/user/.cache /opt/mcp \
@@ -129,9 +129,9 @@ ENV PATH=/usr/lib/jvm/java-21-openjdk/bin:$PATH
 #   - /home can be overwritten by PVC mounts at workspace startup
 #   - $CLAUDE_CONFIG_DIR value is only known at runtime
 #
-# 3. Claude Code is installed at workspace startup via the native installer
-#    (curl -fsSL https://claude.ai/install.sh | bash) which places the binary
-#    in ~/.local/bin/claude. The postStart symlinks ~/.claude for config persistence.
+# 3. Claude Code is installed globally via npm, so the binary is in /usr/local/bin/.
+#    The postStart symlinks ~/.claude for config persistence.
 
 # Verify installation
+RUN claude --version
 RUN java -version

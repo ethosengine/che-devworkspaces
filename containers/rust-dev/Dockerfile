@@ -40,9 +40,6 @@ RUN dnf install -y \
 RUN curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh \
     | bash -s -- --to /usr/local/bin
 
-# Install pnpm (corepack not available with system-packaged Node.js)
-RUN npm install -g pnpm
-
 # ============================================================================
 # Rust toolchain (installed to /opt/rust to survive PVC mounts)
 # ============================================================================

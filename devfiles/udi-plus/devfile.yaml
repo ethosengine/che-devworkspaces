@@ -108,9 +108,6 @@ commands:
         rm -f /home/user/.claude.json 2>/dev/null || true
         ln -sf "$CLAUDE_CONFIG_DIR/.claude.json" /home/user/.claude.json
 
-        # Install/update Claude Code via native installer (always gets latest version)
-        curl -fsSL https://claude.ai/install.sh | bash
-
 events:
   postStart:
     - setup-vscode-cli
