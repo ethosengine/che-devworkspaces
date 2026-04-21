@@ -69,6 +69,45 @@ RUN rustup target add wasm32-unknown-unknown
 RUN rustc --version && cargo --version && rust-analyzer --version && \
     rustup target list --installed | grep wasm32
 
+# ============================================================================
+# Patch datachannel-sys libdatachannel/CMakeLists.txt
+# ============================================================================
+# Upstream libdatachannel calls find_package(OpenSSL REQUIRED) without first
+# calling find_package(ZLIB REQUIRED). datachannel-sys vendors an OpenSSL
+# whose CMake config declares ZLIB::ZLIB in its link interface, so the
+# configure step fails unless ZLIB has already been found.
+#
+# We prime the cargo registry so the crate source lands on disk, then patch
+# the CMakeLists. Both steps hard-fail on mismatch so a silently-stale patch
+# can't rot after a datachannel-sys version bump.
+#
+# Remove this block when upstream adds find_package(ZLIB REQUIRED):
+#   https://github.com/paullouisageneau/libdatachannel
+# ============================================================================
+RUN mkdir -p /tmp/fetch && cd /tmp/fetch && \
+    cargo init --quiet --name fetch-only && \
+    printf '\n[dependencies]\ndatachannel-sys = "=0.23.0"\n' >> Cargo.toml && \
+    cargo fetch --quiet && \
+    rm -rf /tmp/fetch
+
+RUN set -e; \
+    CML=$(find /opt/rust/cargo/registry/src \
+            -path '*datachannel-sys-0.23.0+0.23.2/libdatachannel/CMakeLists.txt' \
+            -print -quit); \
+    if [ -z "$CML" ]; then \
+        echo "datachannel-sys 0.23.0+0.23.2 not found — patch needs re-aiming"; \
+        exit 1; \
+    fi; \
+    if grep -q 'find_package(ZLIB REQUIRED)' "$CML"; then \
+        echo "already patched"; \
+    else \
+        sed -i 's|^\tfind_package(OpenSSL REQUIRED)$|\tfind_package(ZLIB REQUIRED)\n\tfind_package(OpenSSL REQUIRED)|' "$CML"; \
+        if ! grep -q 'find_package(ZLIB REQUIRED)' "$CML"; then \
+            echo "patch did not apply"; \
+            exit 1; \
+        fi; \
+    fi
+
 USER root
 
 # ============================================================================
