@@ -32,6 +32,7 @@ RUN dnf install -y \
     gcc \
     gcc-c++ \
     make \
+    cmake \
     openssl-devel \
     pkg-config \
     && dnf clean all
