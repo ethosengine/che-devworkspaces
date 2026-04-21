@@ -34,6 +34,7 @@ RUN dnf install -y \
     make \
     cmake \
     openssl-devel \
+    zlib-devel \
     pkg-config \
     && dnf clean all
 
