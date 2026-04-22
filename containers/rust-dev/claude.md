@@ -4,11 +4,12 @@ Context for maintainers of `Dockerfile`. Expected to be revisited when
 holochain/datachannel-sys versions bump or the upstream libdatachannel fix
 lands.
 
-## Why cmake, zlib-devel, and the CMakeLists patch all exist
+## Why these system deps and patches exist
 
-Holochain's default features pull `datachannel-sys`, which vendors libdatachannel
-and a vendored OpenSSL build. Building it end-to-end requires three things UBI10
-does not provide out of the box, layered in this order:
+Holochain's default features pull `datachannel-sys` (which vendors
+libdatachannel and OpenSSL) and transitively pull `wasmer` and other crates
+that use `bindgen`. Building end-to-end requires four things UBI10 does not
+provide out of the box, layered in this order:
 
 1. **`cmake`** — libdatachannel's build.rs invokes cmake. Without it, the build
    fails at configure. Added via dnf.
@@ -16,7 +17,13 @@ does not provide out of the box, layered in this order:
    that declares `ZLIB::ZLIB` in its link interface. The runtime `libz.so.1` is
    present in UBI10, but `zlib.h`, the `libz.so` symlink, and `zlib.pc` are not.
    Without them the configure step cannot resolve the link. Added via dnf.
-3. **CMakeLists sed patch** — even with both libs installed, libdatachannel's
+3. **`clang-libs`** (+ `LIBCLANG_PATH=/usr/lib64`) — `bindgen` loads
+   `libclang.so` at cargo build time to generate FFI bindings. Both `wasmer`
+   (0.70.x bindgen) and `datachannel-sys` (0.71.x bindgen) need it. The
+   `ENV LIBCLANG_PATH` line is belt-and-suspenders: clang-libs does install to
+   the default loader path, but bindgen's discovery order prefers the env var
+   and skipping it risks a silent fallback failure.
+4. **CMakeLists sed patch** — even with all the libs installed, libdatachannel's
    own `CMakeLists.txt` calls `find_package(OpenSSL REQUIRED)` without first
    calling `find_package(ZLIB REQUIRED)`. The vendored OpenSSL's config then
    references a `ZLIB::ZLIB` target that does not exist yet, and cmake errors
@@ -25,7 +32,27 @@ does not provide out of the box, layered in this order:
    registry and inject `find_package(ZLIB REQUIRED)` on the line above the
    existing OpenSSL call.
 
-All three layers are required. Removing any one of them re-breaks the build.
+All four layers are required. Removing any one of them re-breaks the build.
+
+## Other -sys crates in the sweettest dep graph (for reference)
+
+A dep scan on 2026-04-22 found the following native-lib -sys crates, all
+configured to vendor/bundle from source rather than link system libs:
+
+| Crate                      | How it builds                  |
+|----------------------------|--------------------------------|
+| openssl-sys                | vendored feature active        |
+| libsqlite3-sys             | bundled (amalgamation inlined) |
+| aws-lc-sys                 | prebuilt-nasm — no bindgen, no nasm at build |
+| libsodium-sys-stable       | vendored fallback (cc)         |
+| zstd-sys, bzip2-sys, lzma-sys | bundled                     |
+| datachannel-sys            | vendored (patched, see above)  |
+
+No sign of protoc, nasm, go, or python build scripts in the tree. If a future
+holochain bump changes any of these from vendored to system-linked, or flips
+a feature that disables vendoring, new dnf packages may be needed. Re-run the
+scan with `cargo tree --edges features --prefix none | grep -E "^(...)"`
+from the sweettest dir to confirm.
 
 ## Exit conditions
 

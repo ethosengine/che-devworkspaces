@@ -33,10 +33,16 @@ RUN dnf install -y \
     gcc-c++ \
     make \
     cmake \
+    clang-libs \
     openssl-devel \
     zlib-devel \
     pkg-config \
     && dnf clean all
+
+# bindgen (used by wasmer and datachannel-sys) loads libclang.so at build time.
+# UBI10 installs it to /usr/lib64; set LIBCLANG_PATH so bindgen finds it without
+# relying on ldconfig state inside the container.
+ENV LIBCLANG_PATH=/usr/lib64
 
 # Install just command runner
 RUN curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh \
