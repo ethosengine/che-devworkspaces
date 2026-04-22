@@ -86,7 +86,7 @@ RUN rustc --version && cargo --version && rust-analyzer --version && \
 # ============================================================================
 RUN mkdir -p /tmp/fetch && cd /tmp/fetch && \
     cargo init --quiet --name fetch-only && \
-    printf '\n[dependencies]\ndatachannel-sys = "=0.23.0"\n' >> Cargo.toml && \
+    cargo add --quiet datachannel-sys@=0.23.0 && \
     cargo fetch --quiet && \
     rm -rf /tmp/fetch
 
