@@ -75,6 +75,9 @@ RUN BUILDKIT_VERSION=0.12.5 && \
     chmod +x /usr/local/bin/buildctl && \
     rm -rf /tmp/bin
 
+# Enable pnpm via corepack (bundled with Node.js)
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
 # Install SonarQube Scanner and configure to use system JRE
 RUN curl -o sonar-scanner.zip -L https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.2.1.4610-linux-x64.zip && \
     unzip sonar-scanner.zip && \
