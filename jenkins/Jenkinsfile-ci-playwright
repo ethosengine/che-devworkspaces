@@ -1,8 +1,13 @@
 // CI Playwright Image Pipeline
 // Extends ci-builder with Playwright + chromium for browser automation in CI.
+// Tail of the cascade: ci-builder → ci-builder-nix → ci-playwright.
 @Library('imagebuilder-shared') _
 
 pipeline {
+    options {
+        buildDiscarder(logRotator(numToKeep: 3, artifactNumToKeep: 3))
+    }
+
     agent {
         kubernetes {
             cloud 'kubernetes'

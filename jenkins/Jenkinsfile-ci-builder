@@ -2,6 +2,10 @@
 @Library('imagebuilder-shared') _
 
 pipeline {
+    options {
+        buildDiscarder(logRotator(numToKeep: 3, artifactNumToKeep: 3))
+    }
+
     agent {
         kubernetes {
             cloud 'kubernetes'
@@ -64,6 +68,13 @@ spec:
                      description: 'Skip smoke tests')
     }
 
+    triggers {
+        // Weekly Sunday 03:00 CST (UTC-6) = 09:00 UTC. Drives the cascade
+        // ci-builder → ci-builder-nix → ci-playwright (each link triggers
+        // the next on success, so builds take turns instead of stampeding).
+        cron('0 9 * * 0')
+    }
+
     stages {
         stage('Checkout') {
             steps {
@@ -96,6 +107,13 @@ spec:
 
                         env.BUILD_RESULT = result.skipped ? 'SKIPPED' : 'SUCCESS'
                         env.IMAGE_NAME = result.fullImageName
+
+                        // Cascade to next link in the chain. ci-builder-nix
+                        // will trigger ci-playwright on its own success.
+                        if (!result.skipped && !params.SKIP_PUSH) {
+                            echo 'ci-builder updated — triggering devspaces-ci-builder-nix'
+                            build job: 'devspaces-ci-builder-nix', wait: false
+                        }
                     }
                 }
             }

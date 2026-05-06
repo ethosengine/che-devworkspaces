@@ -3,6 +3,10 @@
 @Library('imagebuilder-shared') _
 
 pipeline {
+    options {
+        buildDiscarder(logRotator(numToKeep: 3, artifactNumToKeep: 3))
+    }
+
     agent {
         kubernetes {
             cloud 'kubernetes'
@@ -101,6 +105,12 @@ spec:
 
                         env.BUILD_RESULT = result.skipped ? 'SKIPPED' : 'SUCCESS'
                         env.IMAGE_NAME = result.fullImageName
+
+                        // Cascade to next link. ci-playwright is the tail.
+                        if (!result.skipped && !params.SKIP_PUSH) {
+                            echo 'ci-builder-nix updated — triggering devspaces-ci-playwright'
+                            build job: 'devspaces-ci-playwright', wait: false
+                        }
                     }
                 }
             }
