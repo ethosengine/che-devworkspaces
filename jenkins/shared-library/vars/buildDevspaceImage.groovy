@@ -1,7 +1,19 @@
 #!/usr/bin/env groovy
 
 /**
- * Shared library for building DevSpaces images
+ * Shared library for building DevSpaces images.
+ *
+ * Builds with BuildKit (OCI worker in the buildkitd sidecar) and pushes
+ * directly from BuildKit to Harbor. No tarball roundtrip through nerdctl
+ * + containerd — that path was hitting the builder container's
+ * ephemeral-storage limit on multi-GB images (ci-builder-nix, ~3GB
+ * after the Nix store, failed at "no image was built" 2026-05-09 even
+ * though BuildKit's build/export both succeeded).
+ *
+ * Auth: buildctl reads ~/.docker/config.json on the *client* (builder
+ * container) and forwards credentials to buildkitd over the gRPC
+ * session — so creds never need to be mounted into the sidecar.
+ *
  * Usage:
  *   buildDevspaceImage(
  *     imageName: 'udi-plus',
@@ -13,7 +25,6 @@
  *   )
  */
 def call(Map config) {
-    // Validate required parameters
     if (!config.imageName) {
         error("imageName is required")
     }
@@ -21,7 +32,6 @@ def call(Map config) {
         error("dockerfile is required")
     }
 
-    // Set defaults
     def registry = config.registry ?: 'harbor.ethosengine.com/devspaces'
     def baseImage = config.baseImage
     def buildArgs = config.buildArgs ?: [:]
@@ -31,7 +41,6 @@ def call(Map config) {
     def skipSmokeTests = config.skipSmokeTests ?: false
     def forceBuild = config.forceBuild ?: false
 
-    // Generate tags
     def datestamp = sh(script: 'date +%Y-%m-%d', returnStdout: true).trim()
     def gitHash = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
 
@@ -45,13 +54,17 @@ def call(Map config) {
         git: imageTagGit
     ]
 
-    // Store in environment for later stages
     env.IMAGE_TAG_LATEST = imageTagLatest
     env.IMAGE_TAG_DATED = imageTagDated
     env.IMAGE_TAG_GIT = imageTagGit
     env.GIT_HASH = gitHash
 
-    // Check if we should skip build (base image hasn't changed)
+    // Project (last path segment of the registry) — used by all Harbor REST calls below.
+    def project = registry.split('/').last()
+
+    // ------------------------------------------------------------------
+    // Base-image-update check
+    // ------------------------------------------------------------------
     def skipBuild = false
     if (baseImage && !forceBuild && !skipBaseImageCheck) {
         echo "Checking for updates to base image: ${baseImage}"
@@ -88,84 +101,111 @@ def call(Map config) {
         ]
     }
 
-    // Build the image
-    echo "=== Building ${config.imageName} image ==="
-
+    // ------------------------------------------------------------------
+    // Build context preparation
+    // ------------------------------------------------------------------
     sh """#!/bin/bash
         set -euo pipefail
-
-        # Verify BuildKit
-        buildctl --addr unix:///run/buildkit/buildkitd.sock debug workers > /dev/null
-
-        # Create build context
+        rm -rf /tmp/build-context/${config.imageName}
         mkdir -p /tmp/build-context/${config.imageName}
         cp -r ${config.dockerfile}/* /tmp/build-context/${config.imageName}/
-
-        # Build image
-        cd /tmp/build-context/${config.imageName}
-
-        # Construct build args
-        BUILD_ARGS=""
-        ${buildArgs.collect { k, v -> "BUILD_ARGS=\"\$BUILD_ARGS --build-arg ${k}=${v}\"" }.join('\n        ')}
-
-        BUILDKIT_HOST=unix:///run/buildkit/buildkitd.sock \\
-          nerdctl -n k8s.io build \\
-            --no-cache \\
-            \$BUILD_ARGS \\
-            -t ${registry}/${config.imageName}:${imageTagLatest} \\
-            -t ${registry}/${config.imageName}:${imageTagDated} \\
-            -t ${registry}/${config.imageName}:${imageTagGit} \\
-            .
     """
 
-    // Verify image exists
-    def imageExists = sh(
-        script: "nerdctl -n k8s.io images -q ${registry}/${config.imageName}:${imageTagDated}",
-        returnStdout: true
-    ).trim()
+    // Translate buildArgs map → repeated --opt build-arg:K=V flags.
+    def buildArgFlags = buildArgs.collect { k, v -> "--opt build-arg:${k}=${v}" }.join(' ')
 
-    if (!imageExists) {
-        error("❌ VERIFICATION FAILED: ${config.imageName} image not found after build")
-    }
-
-    echo "✅ ${config.imageName} image built and verified"
-
-    // Smoke tests
-    if (!skipSmokeTests) {
-        echo "=== Testing ${config.imageName} image ==="
+    // ------------------------------------------------------------------
+    // Build (and push, unless skipPush)
+    // ------------------------------------------------------------------
+    if (skipPush) {
+        echo "=== Building ${config.imageName} (skipPush=true; validation only, no artifact) ==="
         sh """#!/bin/bash
             set -euo pipefail
+            cd /tmp/build-context/${config.imageName}
 
-            echo "Verifying image exists..."
-            nerdctl -n k8s.io images | grep "${registry}/${config.imageName}" | grep "${imageTagDated}"
-            echo "✅ Image built successfully"
-            echo "⚠️  Skipping container smoke tests (nested containerization not supported in Jenkins pod)"
+            buildctl --addr unix:///run/buildkit/buildkitd.sock build \\
+                --frontend dockerfile.v0 \\
+                --local context=. \\
+                --local dockerfile=. \\
+                --no-cache \\
+                ${buildArgFlags}
         """
-        echo "✅ ${config.imageName} smoke tests passed"
-    }
+        echo "✅ ${config.imageName} build validated"
+    } else {
+        // Push directly from BuildKit → Harbor. Multi-name output writes
+        // all three tags (latest, dated, git-hash) to the same digest
+        // in one push.
+        def outputNames = [
+            "${registry}/${config.imageName}:${imageTagLatest}",
+            "${registry}/${config.imageName}:${imageTagDated}",
+            "${registry}/${config.imageName}:${imageTagGit}"
+        ].join(',')
+        def outputArg = "type=image,\"name=${outputNames}\",push=true"
 
-    // Push to registry
-    if (!skipPush) {
-        echo "=== Pushing ${config.imageName} to Harbor ==="
-
+        echo "=== Building & pushing ${config.imageName} to Harbor ==="
         withCredentials([usernamePassword(
             credentialsId: 'harbor-robot-registry',
             passwordVariable: 'HARBOR_PASSWORD',
             usernameVariable: 'HARBOR_USERNAME'
         )]) {
-            sh """
-                echo \$HARBOR_PASSWORD | nerdctl -n k8s.io login ${registry} -u \$HARBOR_USERNAME --password-stdin
+            sh """#!/bin/bash
+                set -euo pipefail
+                cd /tmp/build-context/${config.imageName}
 
-                nerdctl -n k8s.io push ${registry}/${config.imageName}:${imageTagLatest}
-                nerdctl -n k8s.io push ${registry}/${config.imageName}:${imageTagDated}
-                nerdctl -n k8s.io push ${registry}/${config.imageName}:${imageTagGit}
+                # buildctl forwards docker-config auth to buildkitd over the
+                # gRPC session — creds live only in the builder container.
+                DOCKER_CONFIG=\$(mktemp -d)
+                export DOCKER_CONFIG
+                trap 'rm -rf "\$DOCKER_CONFIG"' EXIT
+                REGISTRY_HOST=\$(echo "${registry}" | cut -d/ -f1)
+                AUTH_B64=\$(printf '%s:%s' "\$HARBOR_USERNAME" "\$HARBOR_PASSWORD" | base64 -w0)
+                cat > "\$DOCKER_CONFIG/config.json" <<EOF
+{"auths":{"\$REGISTRY_HOST":{"auth":"\$AUTH_B64"}}}
+EOF
+
+                buildctl --addr unix:///run/buildkit/buildkitd.sock build \\
+                    --frontend dockerfile.v0 \\
+                    --local context=. \\
+                    --local dockerfile=. \\
+                    --no-cache \\
+                    ${buildArgFlags} \\
+                    --output '${outputArg}'
             """
         }
-
-        echo "✅ ${config.imageName} pushed to Harbor"
+        echo "✅ ${config.imageName} built and pushed to Harbor"
     }
 
-    // Security scan
+    // ------------------------------------------------------------------
+    // Smoke test: verify the manifest is fetchable from Harbor
+    // (replaces the old `nerdctl images | grep` no-op — meaningful now
+    // that the image is never written to local containerd)
+    // ------------------------------------------------------------------
+    if (!skipPush && !skipSmokeTests) {
+        echo "=== Verifying ${config.imageName}:${imageTagDated} manifest in Harbor ==="
+        withCredentials([usernamePassword(
+            credentialsId: 'harbor-robot-registry',
+            passwordVariable: 'HARBOR_PASSWORD',
+            usernameVariable: 'HARBOR_USERNAME'
+        )]) {
+            sh """#!/bin/bash
+                set -euo pipefail
+                AUTH_B64=\$(printf '%s:%s' "\$HARBOR_USERNAME" "\$HARBOR_PASSWORD" | base64 -w0)
+                STATUS=\$(curl -sS -o /dev/null -w '%{http_code}' \\
+                    -H "Authorization: Basic \$AUTH_B64" \\
+                    -H 'Accept: application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json,application/vnd.oci.image.index.v1+json,application/vnd.docker.distribution.manifest.list.v2+json' \\
+                    "https://harbor.ethosengine.com/v2/${project}/${config.imageName}/manifests/${imageTagDated}")
+                if [ "\$STATUS" != "200" ]; then
+                    echo "❌ Harbor manifest fetch returned HTTP \$STATUS"
+                    exit 1
+                fi
+                echo "✅ Manifest in Harbor for ${config.imageName}:${imageTagDated} (HTTP 200)"
+            """
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Trigger Harbor security scan
+    // ------------------------------------------------------------------
     if (!skipSecurityScan && !skipPush) {
         echo "=== Triggering Harbor security scan for ${config.imageName} ==="
 
@@ -174,9 +214,6 @@ def call(Map config) {
             passwordVariable: 'HARBOR_PASSWORD',
             usernameVariable: 'HARBOR_USERNAME'
         )]) {
-            // Extract project from registry
-            def project = registry.split('/').last()
-
             sh """
                 AUTH_HEADER="Authorization: Basic \$(echo -n "\$HARBOR_USERNAME:\$HARBOR_PASSWORD" | base64)"
 
@@ -193,11 +230,12 @@ def call(Map config) {
         echo "✅ Security scan initiated for ${config.imageName}"
     }
 
-    // Clean up old images from Harbor (keep latest + 3 most recent dated tags)
+    // ------------------------------------------------------------------
+    // Clean up old images from Harbor (keep latest + 3 most recent dated)
+    // ------------------------------------------------------------------
     if (!skipPush) {
         echo "=== Cleaning up old ${config.imageName} images from Harbor ==="
 
-        def project = registry.split('/').last()
         def keepCount = 3
 
         withCredentials([usernamePassword(
@@ -273,7 +311,9 @@ def call(Map config) {
         }
     }
 
+    // ------------------------------------------------------------------
     // Return build info
+    // ------------------------------------------------------------------
     return [
         skipped: false,
         tags: imageTags,
