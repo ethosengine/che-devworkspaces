@@ -71,6 +71,15 @@ spec:
                      description: 'Skip smoke tests')
     }
 
+    triggers {
+        // Poll SCM every 5 minutes so a change scoped to ci-builder-nix
+        // (without a ci-builder change) still triggers a rebuild — the
+        // ci-builder → ci-builder-nix cascade only fires when ci-builder
+        // itself rebuilds, which left this pipeline stale 2025-12 → 2026-05
+        // when the sccache layer was added in commit 59c50f8.
+        pollSCM('H/5 * * * *')
+    }
+
     stages {
         stage('Checkout') {
             steps {
