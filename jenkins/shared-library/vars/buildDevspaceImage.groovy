@@ -259,11 +259,23 @@ EOF
 
                 def artifacts = readJSON text: artifactsJson
 
-                // Collect dated tags (YYYY-MM-DD format) with their push times
+                // Collect dated tags (YYYY-MM-DD format) with their push times.
+                // readJSON uses net.sf.json which represents JSON null as a
+                // singleton JSONNull object, *not* Groovy null — so plain
+                // truthy checks like `if (!artifact.tags)` don't catch it,
+                // and `entry.name` blows up with "No such property: name for
+                // class: net.sf.json.JSONNull" when an entry is JSONNull.
                 def datedArtifacts = []
                 for (artifact in artifacts) {
-                    if (!artifact.tags) continue
-                    def tags = artifact.tags.collect { it.name }
+                    if (!artifact?.tags || artifact.tags instanceof net.sf.json.JSONNull) continue
+                    def tags = []
+                    for (entry in artifact.tags) {
+                        if (entry == null || entry instanceof net.sf.json.JSONNull) continue
+                        def n = entry.name
+                        if (n != null && !(n instanceof net.sf.json.JSONNull)) {
+                            tags.add(n.toString())
+                        }
+                    }
                     def datedTag = tags.find { it ==~ /\d{4}-\d{2}-\d{2}/ }
                     if (datedTag) {
                         datedArtifacts.add([
