@@ -11,10 +11,23 @@
 
 FROM harbor.ethosengine.com/ethosengine/ci-builder:latest
 
-# Install Nix using Determinate Systems installer (single-user mode for containers)
-# https://github.com/DeterminateSystems/nix-installer
-RUN curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | \
-    sh -s -- install linux --no-confirm --init none
+# Install Nix via the Determinate Systems nix-installer.
+#
+# Pin the version + sha256-verify the binary instead of curl-piping the
+# wrapper at install.determinate.systems. The wrapper sets its own
+# --speed-limit/--speed-time on the inner curl call and aborts on slow
+# links (caught us 2026-05-09: build #4 on main, 117s in, "Less than
+# 250000 bytes/sec transferred the last 15 seconds"). Direct download
+# from GitHub releases lets us control retry behavior.
+ARG NIX_INSTALLER_VERSION=v3.20.0
+ARG NIX_INSTALLER_SHA256=afaf0c1f426a08967aef4c7f50bbb6282a9312f945775bdf0a0110642339d9d6
+RUN curl -fsSL --retry 5 --retry-delay 5 --retry-max-time 300 \
+        -o /tmp/nix-installer \
+        "https://github.com/DeterminateSystems/nix-installer/releases/download/${NIX_INSTALLER_VERSION}/nix-installer-x86_64-linux" \
+ && echo "${NIX_INSTALLER_SHA256}  /tmp/nix-installer" | sha256sum -c - \
+ && chmod +x /tmp/nix-installer \
+ && /tmp/nix-installer install linux --no-confirm --init none \
+ && rm -f /tmp/nix-installer
 
 # Configure Nix for Holochain builds
 RUN mkdir -p /etc/nix && \
