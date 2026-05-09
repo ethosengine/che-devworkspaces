@@ -287,8 +287,10 @@ EOF
                     }
                 }
 
-                // Sort by dated tag descending (newest first)
-                datedArtifacts.sort { a, b -> b.datedTag <=> a.datedTag }
+                // Sort by dated tag descending (newest first). toSorted
+                // returns a new list and avoids the CPS sandbox warning
+                // that .sort { closure } emits in Jenkins shared libraries.
+                datedArtifacts = datedArtifacts.toSorted { a, b -> b.datedTag <=> a.datedTag }
 
                 if (datedArtifacts.size() > keepCount) {
                     def toDelete = datedArtifacts.drop(keepCount)

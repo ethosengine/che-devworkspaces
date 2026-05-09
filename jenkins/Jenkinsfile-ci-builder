@@ -110,9 +110,15 @@ spec:
 
                         // Cascade to next link in the chain. ci-builder-nix
                         // will trigger ci-playwright on its own success.
+                        // Tolerate the downstream job not existing yet — a
+                        // missing item shouldn't turn this build red.
                         if (!result.skipped && !params.SKIP_PUSH) {
-                            echo 'ci-builder updated — triggering devspaces-ci-builder-nix'
-                            build job: 'devspaces-ci-builder-nix', wait: false
+                            try {
+                                echo 'ci-builder updated — triggering devspaces-ci-builder-nix'
+                                build job: 'devspaces-ci-builder-nix', wait: false
+                            } catch (err) {
+                                echo "⚠️  Cascade trigger skipped: ${err.message}"
+                            }
                         }
                     }
                 }

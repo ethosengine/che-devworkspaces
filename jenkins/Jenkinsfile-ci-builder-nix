@@ -116,9 +116,15 @@ spec:
                         env.IMAGE_NAME = result.fullImageName
 
                         // Cascade to next link. ci-playwright is the tail.
+                        // Tolerate the downstream job not existing yet — a
+                        // missing item shouldn't turn this build red.
                         if (!result.skipped && !params.SKIP_PUSH) {
-                            echo 'ci-builder-nix updated — triggering devspaces-ci-playwright'
-                            build job: 'devspaces-ci-playwright', wait: false
+                            try {
+                                echo 'ci-builder-nix updated — triggering devspaces-ci-playwright'
+                                build job: 'devspaces-ci-playwright', wait: false
+                            } catch (err) {
+                                echo "⚠️  Cascade trigger skipped: ${err.message}"
+                            }
                         }
                     }
                 }
