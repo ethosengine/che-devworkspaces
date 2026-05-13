@@ -1,0 +1,152 @@
+schemaVersion: 2.2.0
+metadata:
+  name: udi-plus-mem-workspace
+  displayName: UDI Plus + MemPalace (Semantic Memory)
+  description: >-
+    Universal Developer Image with Claude Code plus MemPalace semantic
+    memory tooling (local-only inference, ChromaDB-backed).
+  icon: >-
+    https://raw.githubusercontent.com/devfile/devfile-web/main/apps/landing-page/public/pwa-192x192.png
+  tags:
+    - Java
+    - Node.js
+    - Python
+    - ubi10
+    - Claude
+    - MemPalace
+  projectType: universal
+  language: Polyglot
+  version: 1.0.0
+  # projects:
+  #   - name: your-project
+  #     git:
+  #       remotes:
+  #         origin: https://github.com/your-org/your-repo.git
+
+components:
+  - name: tools
+    container:
+      # Image build source: https://github.com/ethosengine/che-devworkspaces
+      #   containers/udi-plus-mem/Dockerfile — FROM udi-plus, adds MemPalace,
+      #     ChromaDB, sentence-transformers (CPU-only torch), and pre-warmed
+      #     all-MiniLM-L6-v2 embedding model at /opt/mempalace/hf-cache.
+      #   Built via Jenkins (devspaces-udi-plus-mem).
+      image: harbor.ethosengine.com/devspaces/udi-plus-mem:latest
+      memoryLimit: 8Gi
+      memoryRequest: 2Gi
+      cpuRequest: 1000m
+      cpuLimit: 4000m
+      mountSources: true
+      volumeMounts:
+        - name: buildkit-socket
+          path: /run/buildkit
+      env:
+        - name: CLAUDE_CONFIG_DIR
+          value: /projects/.claude-config
+        - name: XDG_CONFIG_HOME
+          value: /projects/.config
+        - name: XDG_CACHE_HOME
+          value: /projects/.cache
+        - name: CHROME_BIN
+          value: /usr/local/bin/chrome
+        - name: CHROME_PATH
+          value: /opt/chrome-linux64/chrome
+        - name: BUILDKIT_HOST
+          value: unix:///run/buildkit/buildkitd.sock
+        # ===== MemPalace =====
+        # Per-workspace store on PVC (mirrors /projects/.claude-config pattern).
+        # SQLite metadata + ChromaDB persistence both land under here.
+        - name: MEMPALACE_HOME
+          value: /projects/.mempalace
+        # Use the locally-baked embedding model — no network calls.
+        - name: MEMPALACE_EMBEDDING_BACKEND
+          value: local
+        - name: MEMPALACE_EMBEDDING_MODEL
+          value: sentence-transformers/all-MiniLM-L6-v2
+        # Reinforce offline mode at runtime (image also bakes these).
+        - name: HF_HOME
+          value: /opt/mempalace/hf-cache
+        - name: HF_HUB_OFFLINE
+          value: "1"
+        - name: TRANSFORMERS_OFFLINE
+          value: "1"
+  - name: buildkitd
+    attributes:
+      controller.devfile.io/container-overrides: |
+        securityContext:
+          privileged: true
+          runAsUser: 0
+          runAsNonRoot: false
+    container:
+      image: moby/buildkit:v0.12.5
+      memoryLimit: 2G
+      memoryRequest: 512Mi
+      command: ['buildkitd']
+      args:
+        - '--addr'
+        - 'unix:///run/buildkit/buildkitd.sock'
+        - '--oci-worker=true'
+        - '--containerd-worker=false'
+      volumeMounts:
+        - name: buildkit-socket
+          path: /run/buildkit
+  - name: buildkit-socket
+    volume:
+      ephemeral: true
+
+commands:
+  - id: setup-vscode-cli
+    exec:
+      component: tools
+      commandLine: |
+        # Create VS Code CLI symlink (code-oss -> code)
+        # checode only ships ubi8/ubi9 binaries, use ubi9 (forward compatible with ubi10)
+        mkdir -p /home/user/.local/bin
+        if [ -f /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss ]; then
+          ln -sf /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss /home/user/.local/bin/code
+        fi
+
+        # === Claude Code Persistence Setup ===
+        mkdir -p "$CLAUDE_CONFIG_DIR"
+        mkdir -p "$CLAUDE_CONFIG_DIR/ide"
+        rm -rf /home/user/.claude 2>/dev/null || true
+        ln -sf "$CLAUDE_CONFIG_DIR" /home/user/.claude
+        rm -f /home/user/.claude.json 2>/dev/null || true
+        ln -sf "$CLAUDE_CONFIG_DIR/.claude.json" /home/user/.claude.json
+
+  # ----------------------------------------------------------------------------
+  # MemPalace setup — kept OUT of postStart by default.
+  #
+  # Rationale: anything that fails in postStart blocks workspace start, which
+  # is a much bigger pain than running this manually once after first start.
+  # Run from a terminal:
+  #     /bin/bash -lc 'echo $MEMPALACE_HOME; mempalace --help'
+  #     <invoke this command from the IDE task runner>
+  #
+  # Wire it into events.postStart only after you've validated it on a fresh
+  # workspace from the tools container terminal.
+  # ----------------------------------------------------------------------------
+  - id: setup-mempalace
+    exec:
+      component: tools
+      commandLine: |
+        set -e
+
+        # Persistent store on /projects PVC
+        mkdir -p "$MEMPALACE_HOME"
+
+        # Idempotent init (mempalace init should be a no-op if already initialized;
+        # VERIFY this against the real CLI before enabling in postStart).
+        if [ ! -f "$MEMPALACE_HOME/.initialized" ]; then
+          mempalace init --home "$MEMPALACE_HOME"
+          touch "$MEMPALACE_HOME/.initialized"
+        fi
+
+        # Wing creation — pilot scope is historian-only per the spec.
+        # Add additional wings (librarian, etc.) once the historian pilot proves out.
+        mempalace wing create historian --home "$MEMPALACE_HOME" 2>/dev/null || true
+
+events:
+  postStart:
+    - setup-vscode-cli
+    # - setup-mempalace   # enable only after manual verification on a fresh workspace

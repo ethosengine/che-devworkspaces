@@ -1,0 +1,206 @@
+schemaVersion: 2.2.0
+metadata:
+  name: udi-plus-mem-rust-nix-workspace
+  displayName: UDI Plus + MemPalace + Rust/Holochain/Nix
+  description: >-
+    Full-stack image: Claude Code + MemPalace semantic memory + Rust toolchain
+    + pre-built Holochain binaries + optional Nix installer.
+  icon: https://www.rust-lang.org/logos/rust-logo-512x512.png
+  tags:
+    - Rust
+    - Holochain
+    - Nix
+    - Claude
+    - MemPalace
+    - ubi10
+  projectType: rust
+  language: rust
+  version: 1.0.0
+  # projects:
+  #   - name: your-project
+  #     git:
+  #       remotes:
+  #         origin: https://github.com/your-org/your-repo.git
+
+components:
+  - name: tools
+    container:
+      # Image build source: https://github.com/ethosengine/che-devworkspaces
+      #   containers/udi-plus-mem-rust-nix/Dockerfile — FROM udi-plus-mem,
+      #     adds the Rust toolchain (at /opt/rust), Holochain binaries (at
+      #     /opt/holochain), sccache, just, and a cached Nix installer.
+      #   Built via Jenkins (devspaces-udi-plus-mem-rust-nix).
+      image: harbor.ethosengine.com/devspaces/udi-plus-mem-rust-nix:latest
+      memoryLimit: 20Gi
+      memoryRequest: 8Gi
+      cpuRequest: 1000m
+      cpuLimit: 4000m
+      mountSources: true
+      sourceMapping: /projects
+      volumeMounts:
+        - name: nix-store
+          path: /nix
+        - name: cargo-cache
+          path: /home/user/.cargo
+        - name: rustup-cache
+          path: /home/user/.rustup
+      endpoints:
+        - name: http-8080
+          targetPort: 8080
+          exposure: public
+          protocol: https
+        - name: debug-5005
+          targetPort: 5005
+          exposure: internal
+      env:
+        - name: CLAUDE_CONFIG_DIR
+          value: /projects/.claude-config
+        - name: RUST_BACKTRACE
+          value: '1'
+        - name: USER
+          value: user
+        # XDG directories use ephemeral /tmp to avoid consuming PVC space
+        - name: XDG_CACHE_HOME
+          value: /tmp/nix-cache
+        - name: XDG_DATA_HOME
+          value: /tmp/nix-data
+        - name: XDG_STATE_HOME
+          value: /projects/.state
+        - name: XDG_CONFIG_HOME
+          value: /projects/.config
+        - name: NPM_CONFIG_CACHE
+          value: /tmp/nix-cache/npm
+        # Nix configuration for Holochain dev in rootless containers
+        - name: NIX_CONFIG
+          value: |
+            experimental-features = nix-command flakes
+            sandbox = false
+            substituters = https://cache.nixos.org https://holochain-ci.cachix.org
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= holochain-ci.cachix.org-1:5IUSkZc0aoRS53rfkvH9Kid40NpyjwCMCzwRTXy+QN8=
+            auto-optimise-store = true
+            min-free = 5368709120
+            max-free = 10737418240
+            keep-outputs = false
+            keep-derivations = false
+        # ===== MemPalace =====
+        - name: MEMPALACE_HOME
+          value: /projects/.mempalace
+        - name: MEMPALACE_EMBEDDING_BACKEND
+          value: local
+        - name: MEMPALACE_EMBEDDING_MODEL
+          value: sentence-transformers/all-MiniLM-L6-v2
+        - name: HF_HOME
+          value: /opt/mempalace/hf-cache
+        - name: HF_HUB_OFFLINE
+          value: "1"
+        - name: TRANSFORMERS_OFFLINE
+          value: "1"
+
+  # Nix store volume - 30Gi recommended for stable operation
+  - name: nix-store
+    volume:
+      size: 15Gi
+  - name: cargo-cache
+    volume:
+      size: 3Gi
+  - name: rustup-cache
+    volume:
+      size: 2Gi
+
+commands:
+  - id: rust-init-project
+    exec:
+      label: "Initialize Rust Project"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: |
+        if [ ! -f Cargo.toml ]; then
+          cargo init .
+          echo "Rust project initialized"
+        else
+          echo "Rust project already exists"
+        fi
+
+  - id: cargo-build
+    exec:
+      label: "Build Rust Project"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: cargo build
+      group:
+        kind: build
+        isDefault: true
+
+  - id: cargo-run
+    exec:
+      label: "Run Rust Project"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: cargo run
+      group:
+        kind: run
+        isDefault: true
+
+  - id: cargo-test
+    exec:
+      label: "Test Rust Project"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: cargo test
+      group:
+        kind: test
+        isDefault: true
+
+  - id: cargo-clippy
+    exec:
+      label: "Run Clippy Linter"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: cargo clippy -- -D warnings
+
+  - id: cargo-fmt
+    exec:
+      label: "Format Code"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: cargo fmt
+
+  - id: rust-status
+    exec:
+      label: "Check Rust/Holochain Status"
+      component: tools
+      workingDir: ${PROJECT_SOURCE}
+      commandLine: rust-status
+
+  - id: setup-vscode-cli
+    exec:
+      component: tools
+      commandLine: |
+        mkdir -p /home/user/.local/bin
+        if [ -f /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss ]; then
+          ln -sf /checode/checode-linux-libc/ubi9/bin/remote-cli/code-oss /home/user/.local/bin/code
+        fi
+        rm -rf /home/user/.claude 2>/dev/null || true
+        ln -sf "$CLAUDE_CONFIG_DIR" /home/user/.claude
+        mkdir -p /home/user/.claude/ide
+        rm -f /home/user/.claude.json 2>/dev/null || true
+        ln -sf "$CLAUDE_CONFIG_DIR/.claude.json" /home/user/.claude.json
+
+  # MemPalace setup — kept OUT of postStart by default; see commentary in
+  # devfiles/udi-plus-mem/devfile.yaml for the rationale.
+  - id: setup-mempalace
+    exec:
+      component: tools
+      commandLine: |
+        set -e
+        mkdir -p "$MEMPALACE_HOME"
+        if [ ! -f "$MEMPALACE_HOME/.initialized" ]; then
+          mempalace init --home "$MEMPALACE_HOME"
+          touch "$MEMPALACE_HOME/.initialized"
+        fi
+        mempalace wing create historian --home "$MEMPALACE_HOME" 2>/dev/null || true
+
+events:
+  postStart:
+    - setup-vscode-cli
+    # - setup-mempalace   # enable only after manual verification on a fresh workspace

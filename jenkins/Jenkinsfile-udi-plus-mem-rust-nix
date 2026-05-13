@@ -1,0 +1,138 @@
+// UDI Plus + MemPalace + Rust/Holochain/Nix Image Pipeline
+//
+// Layer: udi-plus -> udi-plus-mem -> udi-plus-mem-rust-nix
+// Built from containers/udi-plus-mem-rust-nix/Dockerfile.
+// Terminal node — no downstream triggers.
+@Library('imagebuilder-shared') _
+
+pipeline {
+    agent {
+        kubernetes {
+            cloud 'kubernetes'
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccount: jenkins-deployer
+  nodeSelector:
+    node-type: edge
+  volumes:
+    - name: containerd-sock
+      hostPath:
+        path: /var/snap/microk8s/common/run/containerd.sock
+        type: Socket
+    - name: buildkit-run
+      emptyDir: {}
+  containers:
+    - name: builder
+      image: harbor.ethosengine.com/ethosengine/ci-builder:latest
+      command:
+        - cat
+      tty: true
+      resources:
+        requests:
+          ephemeral-storage: "4Gi"
+        limits:
+          ephemeral-storage: "8Gi"
+      volumeMounts:
+        - name: containerd-sock
+          mountPath: /run/containerd/containerd.sock
+        - name: buildkit-run
+          mountPath: /run/buildkit
+    - name: buildkitd
+      image: moby/buildkit:v0.12.5
+      securityContext:
+        privileged: true
+      args:
+        - --addr
+        - unix:///run/buildkit/buildkitd.sock
+        - --oci-worker=true
+        - --containerd-worker=false
+      volumeMounts:
+        - name: containerd-sock
+          mountPath: /run/containerd/containerd.sock
+        - name: buildkit-run
+          mountPath: /run/buildkit
+'''
+        }
+    }
+
+    parameters {
+        string(name: 'BASE_TAG', defaultValue: 'latest',
+               description: 'udi-plus-mem tag to build from (use dated tag after udi-plus-mem rebuild)')
+        booleanParam(name: 'FORCE_BUILD', defaultValue: false,
+                     description: 'Force rebuild')
+        booleanParam(name: 'SKIP_PUSH', defaultValue: false,
+                     description: 'Skip pushing to Harbor')
+        booleanParam(name: 'SKIP_SECURITY_SCAN', defaultValue: false,
+                     description: 'Skip security scanning')
+        booleanParam(name: 'SKIP_SMOKE_TESTS', defaultValue: false,
+                     description: 'Skip smoke tests')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                container('builder') {
+                    script {
+                        checkout scm
+                        sh 'git config --global --add safe.directory $(pwd)'
+                        sh 'git clean -fdx'
+                        sh 'git reset --hard HEAD'
+                        echo "Building from branch: ${env.BRANCH_NAME ?: 'main'}"
+                    }
+                }
+            }
+        }
+
+        stage('Build & Push') {
+            steps {
+                container('builder') {
+                    script {
+                        def result = buildDevspaceImage(
+                            imageName: 'udi-plus-mem-rust-nix',
+                            dockerfile: 'containers/udi-plus-mem-rust-nix',
+                            registry: 'harbor.ethosengine.com/devspaces',
+                            baseImage: "harbor.ethosengine.com/devspaces/udi-plus-mem:${params.BASE_TAG}",
+                            buildArgs: [BASE_TAG: params.BASE_TAG],
+                            skipBaseImageCheck: true,  // controlled via BASE_TAG parameter
+                            forceBuild: params.FORCE_BUILD,
+                            skipPush: params.SKIP_PUSH,
+                            skipSecurityScan: params.SKIP_SECURITY_SCAN,
+                            skipSmokeTests: params.SKIP_SMOKE_TESTS
+                        )
+
+                        env.BUILD_RESULT = result.skipped ? 'SKIPPED' : 'SUCCESS'
+                        env.IMAGE_NAME = result.fullImageName
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            container('builder') {
+                script {
+                    def img = 'harbor.ethosengine.com/devspaces/udi-plus-mem-rust-nix'
+                    if (env.IMAGE_TAG_DATED && env.IMAGE_TAG_GIT) {
+                        sh """
+                            set +e
+                            nerdctl -n k8s.io rmi ${img}:latest 2>/dev/null || true
+                            nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_DATED} 2>/dev/null || true
+                            nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_GIT} 2>/dev/null || true
+                        """
+                    }
+                }
+            }
+        }
+        success {
+            script {
+                echo "udi-plus-mem-rust-nix pipeline completed: ${env.BUILD_RESULT}"
+                if (env.IMAGE_NAME) {
+                    echo "Image: ${env.IMAGE_NAME}"
+                }
+            }
+        }
+    }
+}
