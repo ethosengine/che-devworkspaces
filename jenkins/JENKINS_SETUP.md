@@ -4,13 +4,15 @@ This guide explains how to set up the individual image build pipelines in Jenkin
 
 ## Overview
 
-The monolithic `Jenkinsfile-devspaces-images` has been split into 5 separate pipelines:
+The monolithic `Jenkinsfile-devspaces-images` has been split into 7 separate pipelines:
 
 1. **devspaces-ci-builder** - CI builder image (foundational)
 2. **devspaces-udi-plus** - Base UDI image (triggers downstream builds)
 3. **devspaces-rust-nix-dev** - Rust development image
 4. **devspaces-udi-plus-angular** - Angular development image
 5. **devspaces-udi-plus-gae** - Google App Engine image
+6. **devspaces-udi-plus-mem** - UDI + MemPalace semantic memory (triggers udi-plus-mem-rust-nix)
+7. **devspaces-udi-plus-mem-rust-nix** - UDI + MemPalace + Rust/Holochain/Nix
 
 ## Shared Library Setup
 
@@ -103,6 +105,26 @@ Navigate to Jenkins → **New Item** for each of the following:
   - **Script Path**: `jenkins/Jenkinsfile-udi-plus-gae`
   - **Branch**: `*/main`
 
+#### devspaces-udi-plus-mem
+
+- **Name**: `devspaces-udi-plus-mem`
+- **Type**: Pipeline
+- **Pipeline Definition**: Pipeline script from SCM
+  - **SCM**: Git
+  - **Repository URL**: `https://github.com/ethosengine/che-devworkspaces.git`
+  - **Script Path**: `jenkins/Jenkinsfile-udi-plus-mem`
+  - **Branch**: `*/main`
+
+#### devspaces-udi-plus-mem-rust-nix
+
+- **Name**: `devspaces-udi-plus-mem-rust-nix`
+- **Type**: Pipeline
+- **Pipeline Definition**: Pipeline script from SCM
+  - **SCM**: Git
+  - **Repository URL**: `https://github.com/ethosengine/che-devworkspaces.git`
+  - **Script Path**: `jenkins/Jenkinsfile-udi-plus-mem-rust-nix`
+  - **Branch**: `*/main`
+
 ### 2. Configure Credentials
 
 Ensure the following credentials are configured in Jenkins:
@@ -122,15 +144,17 @@ When `udi-plus` is built successfully:
   - `devspaces-rust-nix-dev`
   - `devspaces-udi-plus-angular`
   - `devspaces-udi-plus-gae`
+  - `devspaces-udi-plus-mem` (which in turn triggers `devspaces-udi-plus-mem-rust-nix`)
 
-This is configured in `Jenkinsfile-udi-plus:93-96`:
+This is configured in the downstream-trigger block of `Jenkinsfile-udi-plus`:
 
 ```groovy
 if (!result.skipped && !params.SKIP_PUSH) {
-    echo "✅ udi-plus updated - triggering downstream builds"
+    echo 'udi-plus updated - triggering downstream builds'
     build job: 'devspaces-rust-nix-dev', wait: false
     build job: 'devspaces-udi-plus-angular', wait: false
     build job: 'devspaces-udi-plus-gae', wait: false
+    build job: 'devspaces-udi-plus-mem', wait: false
 }
 ```
 
@@ -184,6 +208,7 @@ If badges don't appear:
 - `devspaces-rust-nix-dev`
 - `devspaces-udi-plus-angular`
 - `devspaces-udi-plus-gae`
+- `devspaces-udi-plus-mem` (and its own downstream: `devspaces-udi-plus-mem-rust-nix`)
 
 ### Permission denied on Harbor
 

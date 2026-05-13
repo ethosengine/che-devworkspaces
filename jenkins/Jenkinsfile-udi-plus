@@ -158,6 +158,7 @@ New versions will be reported after build completion.
                             build job: 'devspaces-rust-nix-dev', wait: false
                             build job: 'devspaces-udi-plus-angular', wait: false
                             build job: 'devspaces-udi-plus-gae', wait: false
+                            build job: 'devspaces-udi-plus-mem', wait: false
                         }
                     }
                 }
