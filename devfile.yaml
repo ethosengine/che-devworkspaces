@@ -66,7 +66,7 @@ components:
           runAsUser: 0
           runAsNonRoot: false
     container:
-      image: moby/buildkit:v0.12.5
+      image: harbor.ethosengine.com/proxy-dockerhub/moby/buildkit:v0.12.5
       memoryLimit: 2G
       memoryRequest: 512Mi
       command: ['buildkitd']

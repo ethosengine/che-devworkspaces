@@ -11,7 +11,7 @@
 #   - Cloud tools: kubectl, helm, terraform, oc, docker-compose
 #   - Build tools: Maven, Gradle
 # We install what we need below.
-FROM quay.io/devfile/base-developer-image:ubi10-latest
+FROM harbor.ethosengine.com/proxy-quay/devfile/base-developer-image:ubi10-latest
 
 USER root
 
@@ -44,7 +44,7 @@ RUN dnf install -y \
 # Provides a stable, headless-capable Chrome binary for npm/Karma tests
 # Note: wget is already in base image, just need unzip temporarily
 RUN dnf install -y unzip && \
-    wget -q https://storage.googleapis.com/chrome-for-testing-public/131.0.6778.87/linux64/chrome-linux64.zip && \
+    wget -q https://nexus.ethosengine.com/repository/googleapis-proxy/chrome-for-testing-public/131.0.6778.87/linux64/chrome-linux64.zip && \
     unzip -q chrome-linux64.zip -d /opt/ && \
     rm chrome-linux64.zip && \
     ln -s /opt/chrome-linux64/chrome /usr/local/bin/chrome && \
@@ -63,26 +63,29 @@ ENV CHROME_PATH=/opt/chrome-linux64/chrome
 
 # Install kubeconform for Kubernetes manifest validation
 ARG KUBECONFORM_VERSION=v0.7.0
-RUN curl -sL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" | tar xz -C /usr/local/bin && \
+RUN curl -sL "https://nexus.ethosengine.com/repository/github-releases-proxy/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" | tar xz -C /usr/local/bin && \
     kubeconform -v
 
 # Install hadolint for Dockerfile linting
 ARG HADOLINT_VERSION=v2.12.0
 RUN curl -sL -o /usr/local/bin/hadolint \
-    "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-Linux-x86_64" && \
+    "https://nexus.ethosengine.com/repository/github-releases-proxy/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-Linux-x86_64" && \
     chmod +x /usr/local/bin/hadolint
 
 # Install yamllint and check-jsonschema for YAML/devfile validation
-# pip3 binary not available in UBI10 base; use python3 -m pip
-RUN python3 -m ensurepip && python3 -m pip install --no-cache-dir yamllint check-jsonschema
+# pip3 binary not available in UBI10 base; use python3 -m pip.
+# pip routed through Nexus PyPI proxy to reduce upstream rate-limit exposure.
+RUN python3 -m ensurepip && python3 -m pip install --no-cache-dir \
+    --index-url https://nexus.ethosengine.com/repository/pypi-proxy/simple/ \
+    yamllint check-jsonschema
 
 # Install nerdctl + buildctl for local container image builds via BuildKit sidecar
 # Versions match ci-builder image for consistency
 ARG NERDCTL_VERSION=1.7.7
 ARG BUILDKIT_VERSION=0.12.5
-RUN curl -fsSL "https://github.com/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/nerdctl-${NERDCTL_VERSION}-linux-amd64.tar.gz" | \
+RUN curl -fsSL "https://nexus.ethosengine.com/repository/github-releases-proxy/containerd/nerdctl/releases/download/v${NERDCTL_VERSION}/nerdctl-${NERDCTL_VERSION}-linux-amd64.tar.gz" | \
     tar -xz -C /usr/local/bin/ nerdctl && \
-    curl -fsSL "https://github.com/moby/buildkit/releases/download/v${BUILDKIT_VERSION}/buildkit-v${BUILDKIT_VERSION}.linux-amd64.tar.gz" | \
+    curl -fsSL "https://nexus.ethosengine.com/repository/github-releases-proxy/moby/buildkit/releases/download/v${BUILDKIT_VERSION}/buildkit-v${BUILDKIT_VERSION}.linux-amd64.tar.gz" | \
     tar -xz -C /tmp/ && \
     mv /tmp/bin/buildctl /usr/local/bin/ && \
     rm -rf /tmp/bin
@@ -101,7 +104,7 @@ RUN mkdir -p /home/user/.cache/sonarqube-mcp \
 # Docs: https://docs.sonarsource.com/sonarqube-mcp-server/build-and-configure/environment-variables
 ARG SONAR_MCP_VERSION=1.5.0.1706
 RUN curl -fL -o /opt/mcp/sonarqube-mcp.jar \
-  "https://github.com/SonarSource/sonarqube-mcp-server/releases/download/${SONAR_MCP_VERSION}/sonarqube-mcp-server-${SONAR_MCP_VERSION}.jar"
+  "https://nexus.ethosengine.com/repository/github-releases-proxy/SonarSource/sonarqube-mcp-server/releases/download/${SONAR_MCP_VERSION}/sonarqube-mcp-server-${SONAR_MCP_VERSION}.jar"
 
 USER user
 

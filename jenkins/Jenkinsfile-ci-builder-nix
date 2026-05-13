@@ -41,7 +41,7 @@ spec:
         - name: buildkit-run
           mountPath: /run/buildkit
     - name: buildkitd
-      image: moby/buildkit:v0.12.5
+      image: harbor.ethosengine.com/proxy-dockerhub/moby/buildkit:v0.12.5
       securityContext:
         privileged: true
       args:

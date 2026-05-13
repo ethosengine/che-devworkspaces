@@ -31,6 +31,14 @@ USER root
 ENV HF_HOME=/opt/mempalace/hf-cache
 ENV SENTENCE_TRANSFORMERS_HOME=/opt/mempalace/hf-cache/sentence-transformers
 ENV MEMPALACE_HOME_DEFAULT=/opt/mempalace
+# NOTE: HF Hub warm-up does NOT route through Nexus. The huggingface_hub
+# client verifies the response with custom headers (X-Repo-Commit,
+# X-Linked-Etag) that Nexus OSS raw-proxy strips during redirect-follow.
+# Setting HF_ENDPOINT=https://nexus.../huggingface-proxy fails with
+# "Distant resource does not seem to be on huggingface.co". Fixing this
+# requires Nexus Pro header-passthrough config (not OSS-available).
+# Build-time warmup happens once per image rebuild, well under HF's
+# anonymous rate limit. At runtime HF_HUB_OFFLINE=1 blocks all HF traffic.
 
 # Layout under /opt/mempalace:
 #   hf-cache/          — Hugging Face model + tokenizer cache (read-only at runtime)
@@ -63,11 +71,22 @@ ARG TORCH_VERSION=2.12.0
 ARG SENTENCE_TRANSFORMERS_VERSION=5.5.0
 ARG CHROMADB_VERSION=1.5.9
 
+# NOTE: torch CPU wheels still pull from download.pytorch.org directly, NOT
+# via Nexus. Two structural reasons make raw-proxying the pytorch CPU index
+# infeasible without an HTML-rewriting frontend:
+#   1. The flat index returns absolute-rooted hrefs (e.g. /whl/setuptools-...)
+#      that lose the /repository/pytorch-cpu-proxy/ prefix when pip resolves
+#      them against Nexus's subpath URL, 404-ing every transitive dep.
+#   2. Wheel hrefs in the index point at download-r2.pytorch.org (a separate
+#      CDN host), so a Nexus proxy on download.pytorch.org only caches index
+#      HTML, never the wheel blobs.
+# download-r2 has generous rate limits; revisit if it ever bites.
 RUN python3 -m pip install --no-cache-dir \
       --index-url https://download.pytorch.org/whl/cpu \
       "torch==${TORCH_VERSION}"
 
 RUN python3 -m pip install --no-cache-dir \
+      --index-url https://nexus.ethosengine.com/repository/pypi-proxy/simple/ \
       "sentence-transformers==${SENTENCE_TRANSFORMERS_VERSION}" \
       "chromadb==${CHROMADB_VERSION}"
 
@@ -80,6 +99,7 @@ RUN python3 -m pip install --no-cache-dir \
 # own publication. Pin version explicitly — do NOT install unpinned.
 ARG MEMPALACE_VERSION=3.3.5
 RUN python3 -m pip install --no-cache-dir \
+      --index-url https://nexus.ethosengine.com/repository/pypi-proxy/simple/ \
       "mempalace==${MEMPALACE_VERSION}"
 
 # ============================================================================

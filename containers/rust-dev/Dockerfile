@@ -55,7 +55,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh \
 ARG SCCACHE_VERSION=v0.15.0
 ARG SCCACHE_SHA256=782d2b5dd7ae0a55ebe368ab258114d0928d019ac2d949ab85d5d02f3926709e
 RUN curl -fsSL -o /tmp/sccache.tar.gz \
-      "https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+      "https://nexus.ethosengine.com/repository/github-releases-proxy/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
  && echo "${SCCACHE_SHA256}  /tmp/sccache.tar.gz" | sha256sum -c - \
  && tar -xzf /tmp/sccache.tar.gz -C /tmp \
  && install -m 0755 "/tmp/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache" /usr/local/bin/sccache \
@@ -137,13 +137,13 @@ ARG HOLOCHAIN_VERSION=0.6.0
 ARG LAIR_VERSION=0.5.3
 RUN mkdir -p /opt/holochain/bin && \
     curl -sL -o /opt/holochain/bin/holochain \
-      "https://github.com/holochain/holochain/releases/download/holochain-${HOLOCHAIN_VERSION}/holochain-x86_64-unknown-linux-gnu" && \
+      "https://nexus.ethosengine.com/repository/github-releases-proxy/holochain/holochain/releases/download/holochain-${HOLOCHAIN_VERSION}/holochain-x86_64-unknown-linux-gnu" && \
     curl -sL -o /opt/holochain/bin/hc \
-      "https://github.com/holochain/holochain/releases/download/holochain-${HOLOCHAIN_VERSION}/hc-x86_64-unknown-linux-gnu" && \
+      "https://nexus.ethosengine.com/repository/github-releases-proxy/holochain/holochain/releases/download/holochain-${HOLOCHAIN_VERSION}/hc-x86_64-unknown-linux-gnu" && \
     curl -sL -o /opt/holochain/bin/hcterm \
-      "https://github.com/holochain/holochain/releases/download/holochain-${HOLOCHAIN_VERSION}/hcterm-x86_64-unknown-linux-gnu" && \
+      "https://nexus.ethosengine.com/repository/github-releases-proxy/holochain/holochain/releases/download/holochain-${HOLOCHAIN_VERSION}/hcterm-x86_64-unknown-linux-gnu" && \
     curl -sL -o /opt/holochain/bin/lair-keystore \
-      "https://github.com/holochain/lair/releases/download/lair_keystore-v${LAIR_VERSION}/lair-keystore-v${LAIR_VERSION}-x86_64-unknown-linux-gnu" && \
+      "https://nexus.ethosengine.com/repository/github-releases-proxy/holochain/lair/releases/download/lair_keystore-v${LAIR_VERSION}/lair-keystore-v${LAIR_VERSION}-x86_64-unknown-linux-gnu" && \
     chmod +x /opt/holochain/bin/* && \
     chown -R user:root /opt/holochain && \
     chmod -R g=u /opt/holochain
