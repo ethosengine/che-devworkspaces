@@ -55,5 +55,21 @@ RUN curl -fsSL -o /tmp/sccache.tar.gz \
  && rm -rf /tmp/sccache.tar.gz "/tmp/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl" \
  && /usr/local/bin/sccache --version
 
+# cargo-nextest — next-gen Rust test runner (https://nexte.st). Distributed as
+# a single statically-linked musl binary, so it installs cleanly here even
+# though this image has no rustup/cargo of its own — the toolchain comes from
+# elohim's `nix develop` shell at job time, and cargo will find the
+# `cargo-nextest` subcommand on PATH. Upstream does not publish sha256 sums;
+# the pin below was captured from the GitHub release tarball at add time and
+# must be refreshed when bumping NEXTEST_VERSION.
+ARG NEXTEST_VERSION=0.9.135
+ARG NEXTEST_SHA256=c485608adb7ed4a81abdbe432b7fe47d053fca45d645d1786f4e97aa8344cdc1
+RUN curl -fsSL -o /tmp/cargo-nextest.tar.gz \
+      "https://github.com/nextest-rs/nextest/releases/download/cargo-nextest-${NEXTEST_VERSION}/cargo-nextest-${NEXTEST_VERSION}-x86_64-unknown-linux-musl.tar.gz" \
+ && echo "${NEXTEST_SHA256}  /tmp/cargo-nextest.tar.gz" | sha256sum -c - \
+ && tar -xzf /tmp/cargo-nextest.tar.gz -C /usr/local/bin/ cargo-nextest \
+ && chmod 0755 /usr/local/bin/cargo-nextest \
+ && rm /tmp/cargo-nextest.tar.gz
+
 # Keep container running
 CMD ["tail", "-f", "/dev/null"]
