@@ -90,30 +90,48 @@ RUN rustc --version && cargo --version && rust-analyzer --version && \
 # Patch datachannel-sys libdatachannel/CMakeLists.txt
 # Upstream issue: find_package(OpenSSL REQUIRED) called without ZLIB first.
 # Remove when upstream fixes: https://github.com/paullouisageneau/libdatachannel
+#
+# The fetch step writes a .cargo/config.toml that mirrors the elohim project's
+# crates-io -> Nexus replacement (/projects/elohim/.cargo/config.toml). Without
+# this, `cargo fetch` here uses the default crates.io index and extracts the
+# source under registry/src/index.crates.io-<hash>/..., but at devspace runtime
+# cargo extracts the *same tarball* under registry/src/nexus.ethosengine.com-<hash>/...
+# — a different path that wouldn't get patched. Earlier image builds had this
+# bug (caught 2026-05-27: pre-push sweettest-check failed in devspace, CI fine).
+#
+# The patch step loops over every matching libdatachannel/CMakeLists.txt under
+# registry/src so any future addition of a mirror still ends up patched.
 # ============================================================================
-RUN mkdir -p /tmp/fetch && cd /tmp/fetch && \
+RUN mkdir -p /tmp/fetch/.cargo && \
+    printf '[source.crates-io]\nreplace-with = "nexus"\n\n[source.nexus]\nregistry = "sparse+https://nexus.ethosengine.com/repository/cargo/"\n' \
+        > /tmp/fetch/.cargo/config.toml && \
+    cd /tmp/fetch && \
     cargo init --quiet --name fetch-only && \
     cargo add --quiet datachannel-sys@=0.23.0 && \
     cargo fetch --quiet && \
     rm -rf /tmp/fetch
 
 RUN set -e; \
-    CML=$(find /opt/rust/cargo/registry/src \
-            -path '*datachannel-sys-0.23.0+0.23.2/libdatachannel/CMakeLists.txt' \
-            -print -quit); \
-    if [ -z "$CML" ]; then \
+    find /opt/rust/cargo/registry/src \
+        -path '*datachannel-sys-0.23.0+0.23.2/libdatachannel/CMakeLists.txt' \
+        > /tmp/cml-list; \
+    if [ ! -s /tmp/cml-list ]; then \
         echo "datachannel-sys 0.23.0+0.23.2 not found — patch needs re-aiming"; \
         exit 1; \
     fi; \
-    if grep -q 'find_package(ZLIB REQUIRED)' "$CML"; then \
-        echo "already patched"; \
-    else \
-        sed -i 's|^\tfind_package(OpenSSL REQUIRED)$|\tfind_package(ZLIB REQUIRED)\n\tfind_package(OpenSSL REQUIRED)|' "$CML"; \
-        if ! grep -q 'find_package(ZLIB REQUIRED)' "$CML"; then \
-            echo "patch did not apply"; \
-            exit 1; \
+    while IFS= read -r CML; do \
+        if grep -q 'find_package(ZLIB REQUIRED)' "$CML"; then \
+            echo "already patched: $CML"; \
+        else \
+            sed -i 's|^\tfind_package(OpenSSL REQUIRED)$|\tfind_package(ZLIB REQUIRED)\n\tfind_package(OpenSSL REQUIRED)|' "$CML"; \
+            if ! grep -q 'find_package(ZLIB REQUIRED)' "$CML"; then \
+                echo "patch did not apply: $CML"; \
+                exit 1; \
+            fi; \
+            echo "patched: $CML"; \
         fi; \
-    fi
+    done < /tmp/cml-list; \
+    rm -f /tmp/cml-list
 
 USER root
 
