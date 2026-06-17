@@ -12,7 +12,10 @@
 # NOT cleared for fleet deploy until verified on a canary (kitsune2 wire-compat +
 # go-pion feature set). Deploy to ONE non-genesis leecher's elohim-node container.
 
-ARG STORAGE_BASE=harbor.ethosengine.com/ethosengine/elohim-storage:latest
+# dev-latest = the floating production tag the edge pipeline pushes on the dev branch
+# (elohim/holochain/Jenkinsfile:1640-1643). `latest` is the main-branch alias and does NOT
+# exist for storage. CONDUCTOR_SOURCE :latest is the patched edgenode this job just pushed.
+ARG STORAGE_BASE=harbor.ethosengine.com/ethosengine/elohim-storage:dev-latest
 ARG CONDUCTOR_SOURCE=harbor.ethosengine.com/ethosengine/elohim-edgenode:latest
 
 FROM ${CONDUCTOR_SOURCE} AS conductor

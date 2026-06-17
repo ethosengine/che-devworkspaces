@@ -97,7 +97,7 @@ spec:
         string(name: 'TX5_BRANCH', defaultValue: 'elohim-0.8.1-zombie-fix',
                description: 'ethosengine/tx5 branch (zombie-fix #194/#199)')
         booleanParam(name: 'BUILD_STORAGE_CANARY', defaultValue: true,
-                     description: 'Also build elohim-storage-zombiefix (production elohim-storage:latest + the patched conductor) — the deploy artifact for the consolidated elohim-node container')
+                     description: 'Also build elohim-storage-zombiefix (production elohim-storage:dev-latest + the patched conductor) — the deploy artifact for the consolidated elohim-node container')
         booleanParam(name: 'SKIP_PUSH', defaultValue: false,
                      description: 'Build only, no Harbor push (validation)')
     }
@@ -158,7 +158,7 @@ spec:
                             forceBuild: true,
                             skipPush: params.SKIP_PUSH
                         )
-                        echo "Canary storage: harbor.ethosengine.com/ethosengine/elohim-storage-zombiefix:{latest,${env.IMAGE_TAG_DATED},${env.IMAGE_TAG_GIT}} = elohim-storage:latest + patched conductor"
+                        echo "Canary storage: harbor.ethosengine.com/ethosengine/elohim-storage-zombiefix:{latest,${env.IMAGE_TAG_DATED},${env.IMAGE_TAG_GIT}} = elohim-storage:dev-latest + patched conductor"
                     }
                 }
             }
