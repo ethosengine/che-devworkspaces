@@ -96,20 +96,10 @@ spec:
                description: 'ethosengine/holochain branch (conductor source + tx5 [patch] + #5719)')
         string(name: 'TX5_BRANCH', defaultValue: 'elohim-0.8.1-zombie-fix',
                description: 'ethosengine/tx5 branch (zombie-fix #194/#199)')
-        string(name: 'HC_FEATURES', defaultValue: 'sqlite-encrypted,wasmer_sys,backend-go-pion',
-               description: 'holochain cargo features (go-pion backend; verify vs holo-host go-pion-custom)')
-        booleanParam(name: 'FORCE_BUILD', defaultValue: true,
-                     description: 'Always rebuild (fork commits live in separate repos, so no SCM-change detection here)')
-        booleanParam(name: 'SKIP_PUSH', defaultValue: false,
-                     description: 'Skip pushing to Harbor (build validation only)')
-        booleanParam(name: 'SKIP_SECURITY_SCAN', defaultValue: false,
-                     description: 'Skip Harbor security scanning')
-        booleanParam(name: 'SKIP_SMOKE_TESTS', defaultValue: false,
-                     description: 'Skip Harbor manifest smoke test')
         booleanParam(name: 'BUILD_STORAGE_CANARY', defaultValue: true,
-                     description: 'Also build the canary elohim-storage-zombiefix image (production storage service + the patched conductor swapped in) — the actual deploy artifact for the consolidated elohim-node container')
-        string(name: 'STORAGE_BASE', defaultValue: 'harbor.ethosengine.com/ethosengine/elohim-storage:1.0.0-dev-5a73e400',
-               description: 'Current PRODUCTION elohim-storage tag to overlay the patched conductor onto (storage service unchanged). Update to the live tag before running the storage-canary stage.')
+                     description: 'Also build elohim-storage-zombiefix (production elohim-storage:latest + the patched conductor) — the deploy artifact for the consolidated elohim-node container')
+        booleanParam(name: 'SKIP_PUSH', defaultValue: false,
+                     description: 'Build only, no Harbor push (validation)')
     }
 
     stages {
@@ -124,7 +114,6 @@ spec:
                         echo "Building elohim-edgenode from che-devworkspaces ${env.BRANCH_NAME ?: 'main'}"
                         echo "  holochain fork branch: ${params.HC_BRANCH}"
                         echo "  tx5 fork branch:       ${params.TX5_BRANCH}"
-                        echo "  features:              ${params.HC_FEATURES}"
                     }
                 }
             }
@@ -138,16 +127,10 @@ spec:
                             imageName: 'elohim-edgenode',
                             dockerfile: 'containers/elohim-edgenode',
                             registry: 'harbor.ethosengine.com/ethosengine',
-                            buildArgs: [
-                                HC_BRANCH: params.HC_BRANCH,
-                                TX5_BRANCH: params.TX5_BRANCH,
-                                HC_FEATURES: params.HC_FEATURES
-                            ],
-                            skipBaseImageCheck: true,   // our trigger is the fork commits, not the holo-host base
-                            forceBuild: params.FORCE_BUILD,
-                            skipPush: params.SKIP_PUSH,
-                            skipSecurityScan: params.SKIP_SECURITY_SCAN,
-                            skipSmokeTests: params.SKIP_SMOKE_TESTS
+                            buildArgs: [HC_BRANCH: params.HC_BRANCH, TX5_BRANCH: params.TX5_BRANCH],
+                            skipBaseImageCheck: true,   // trigger is the fork commits, not the holo-host base
+                            forceBuild: true,
+                            skipPush: params.SKIP_PUSH
                         )
                         env.BUILD_RESULT = result.skipped ? 'SKIPPED' : 'SUCCESS'
                     }
@@ -164,21 +147,18 @@ spec:
                         // (unchanged) + our just-built patched conductor. This is the artifact
                         // actually deployed to the consolidated elohim-node container, since the
                         // storage image carries the embedded conductor.
+                        // No buildArgs: the Dockerfile defaults STORAGE_BASE + CONDUCTOR_SOURCE to
+                        // :latest — i.e. production elohim-storage:latest + the edgenode:latest this
+                        // same run just pushed in the stage above.
                         buildDevspaceImage(
                             imageName: 'elohim-storage-zombiefix',
                             dockerfile: 'containers/elohim-storage-zombiefix',
                             registry: 'harbor.ethosengine.com/ethosengine',
-                            buildArgs: [
-                                STORAGE_BASE: params.STORAGE_BASE,
-                                CONDUCTOR_SOURCE: "harbor.ethosengine.com/ethosengine/elohim-edgenode:${env.IMAGE_TAG_GIT}"
-                            ],
                             skipBaseImageCheck: true,
                             forceBuild: true,
-                            skipPush: params.SKIP_PUSH,
-                            skipSecurityScan: params.SKIP_SECURITY_SCAN,
-                            skipSmokeTests: params.SKIP_SMOKE_TESTS
+                            skipPush: params.SKIP_PUSH
                         )
-                        echo "Canary storage: harbor.ethosengine.com/ethosengine/elohim-storage-zombiefix:{latest,${env.IMAGE_TAG_DATED},${env.IMAGE_TAG_GIT}} = ${params.STORAGE_BASE} + patched conductor"
+                        echo "Canary storage: harbor.ethosengine.com/ethosengine/elohim-storage-zombiefix:{latest,${env.IMAGE_TAG_DATED},${env.IMAGE_TAG_GIT}} = elohim-storage:latest + patched conductor"
                     }
                 }
             }
