@@ -96,8 +96,8 @@ spec:
                description: 'ethosengine/holochain branch (conductor source + tx5 [patch] + #5719)')
         string(name: 'TX5_BRANCH', defaultValue: 'elohim-0.8.1-zombie-fix',
                description: 'ethosengine/tx5 branch (zombie-fix #194/#199)')
-        booleanParam(name: 'BUILD_STORAGE_CANARY', defaultValue: true,
-                     description: 'Also build elohim-storage-zombiefix (production elohim-storage:dev-latest + the patched conductor) — the deploy artifact for the consolidated elohim-node container')
+        booleanParam(name: 'BUILD_STORAGE_CANARY', defaultValue: false,
+                     description: 'Optional standalone elohim-storage-zombiefix image. Normally OFF: production elohim-storage now embeds the patched conductor directly (elohim-storage/Dockerfile CONDUCTOR_SOURCE_IMAGE=elohim-edgenode:latest), so the genesis pipeline deploys it fleet-wide without this. This job just needs to publish elohim-edgenode:latest.')
         booleanParam(name: 'SKIP_PUSH', defaultValue: false,
                      description: 'Build only, no Harbor push (validation)')
     }
