@@ -1,0 +1,166 @@
+// Elohim Edge Node Image Pipeline
+//
+// Builds a CUSTOM edgenode image from source: compiles the patched holochain
+// conductor (our ethosengine/holochain + ethosengine/tx5 forks) and swaps the
+// binary into the holo-host edgenode base. This is the flexible, on-demand home
+// for edgenode builds — separate from the elohim monorepo's edge DEPLOY pipeline
+// (which is near the Jenkinsfile CPS size limit and also builds doorway+storage).
+//
+// Currently carries the tx5/go-pion zombie-PeerConnection leak fix (tx5 #194/#199)
+// + holochain #5719. Change HC_BRANCH / TX5_BRANCH to build a different patch set.
+//
+// Pushes harbor.ethosengine.com/ethosengine/elohim-edgenode:{latest,<date>,<git>}.
+//   NOTE: shares that Harbor repo with the monorepo edge pipeline, which pushes
+//   distinct `1.0.0-dev-<hash>` tags (the deploy uses those specific tags, so it is
+//   NOT affected). This job's tags are the custom from-source build; point a canary
+//   leecher at a SPECIFIC tag from here. To fully isolate, change imageName below.
+//
+// ⚠ NOT cleared for fleet deploy until verified on a canary (kitsune2 wire-compat
+//   + go-pion feature set) — see the elohim deploy recipe.
+@Library('imagebuilder-shared') _
+
+pipeline {
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '3', artifactNumToKeepStr: '3'))
+        timeout(time: 90, unit: 'MINUTES')   // from-source holochain build (CGo) is heavy
+    }
+
+    agent {
+        kubernetes {
+            cloud 'kubernetes'
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccount: jenkins-deployer
+  nodeSelector:
+    node-type: edge
+  volumes:
+    - name: containerd-sock
+      hostPath:
+        path: /var/snap/microk8s/common/run/containerd.sock
+        type: Socket
+    - name: buildkit-run
+      emptyDir: {}
+    # Dedicated scratch for buildkit's OCI worker — the holochain from-source
+    # build (cargo target + Go/CGo) is ~20-30 GB, far larger than the devspaces
+    # images, so it gets its own sized volume instead of the container rootfs.
+    - name: buildkit-data
+      emptyDir:
+        sizeLimit: 60Gi
+  containers:
+    - name: builder
+      image: harbor.ethosengine.com/ethosengine/ci-builder:latest
+      command:
+        - cat
+      tty: true
+      resources:
+        requests:
+          ephemeral-storage: "4Gi"
+        limits:
+          ephemeral-storage: "8Gi"
+      volumeMounts:
+        - name: containerd-sock
+          mountPath: /run/containerd/containerd.sock
+        - name: buildkit-run
+          mountPath: /run/buildkit
+    - name: buildkitd
+      image: harbor.ethosengine.com/proxy-dockerhub/moby/buildkit:v0.12.5
+      securityContext:
+        privileged: true
+      args:
+        - --addr
+        - unix:///run/buildkit/buildkitd.sock
+        - --oci-worker=true
+        - --containerd-worker=false
+        - --root
+        - /var/lib/buildkit
+      resources:
+        requests:
+          ephemeral-storage: "30Gi"
+        limits:
+          ephemeral-storage: "60Gi"
+      volumeMounts:
+        - name: containerd-sock
+          mountPath: /run/containerd/containerd.sock
+        - name: buildkit-run
+          mountPath: /run/buildkit
+        - name: buildkit-data
+          mountPath: /var/lib/buildkit
+'''
+        }
+    }
+
+    parameters {
+        string(name: 'HC_BRANCH', defaultValue: 'elohim-0.6',
+               description: 'ethosengine/holochain branch (conductor source + tx5 [patch] + #5719)')
+        string(name: 'TX5_BRANCH', defaultValue: 'elohim-0.8.1-zombie-fix',
+               description: 'ethosengine/tx5 branch (zombie-fix #194/#199)')
+        string(name: 'HC_FEATURES', defaultValue: 'sqlite-encrypted,wasmer_sys,backend-go-pion',
+               description: 'holochain cargo features (go-pion backend; verify vs holo-host go-pion-custom)')
+        booleanParam(name: 'FORCE_BUILD', defaultValue: true,
+                     description: 'Always rebuild (fork commits live in separate repos, so no SCM-change detection here)')
+        booleanParam(name: 'SKIP_PUSH', defaultValue: false,
+                     description: 'Skip pushing to Harbor (build validation only)')
+        booleanParam(name: 'SKIP_SECURITY_SCAN', defaultValue: false,
+                     description: 'Skip Harbor security scanning')
+        booleanParam(name: 'SKIP_SMOKE_TESTS', defaultValue: false,
+                     description: 'Skip Harbor manifest smoke test')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                container('builder') {
+                    script {
+                        checkout scm
+                        sh 'git config --global --add safe.directory $(pwd)'
+                        sh 'git clean -fdx'
+                        sh 'git reset --hard HEAD'
+                        echo "Building elohim-edgenode from che-devworkspaces ${env.BRANCH_NAME ?: 'main'}"
+                        echo "  holochain fork branch: ${params.HC_BRANCH}"
+                        echo "  tx5 fork branch:       ${params.TX5_BRANCH}"
+                        echo "  features:              ${params.HC_FEATURES}"
+                    }
+                }
+            }
+        }
+
+        stage('Build & Push') {
+            steps {
+                container('builder') {
+                    script {
+                        def result = buildDevspaceImage(
+                            imageName: 'elohim-edgenode',
+                            dockerfile: 'containers/elohim-edgenode',
+                            registry: 'harbor.ethosengine.com/ethosengine',
+                            buildArgs: [
+                                HC_BRANCH: params.HC_BRANCH,
+                                TX5_BRANCH: params.TX5_BRANCH,
+                                HC_FEATURES: params.HC_FEATURES
+                            ],
+                            skipBaseImageCheck: true,   // our trigger is the fork commits, not the holo-host base
+                            forceBuild: params.FORCE_BUILD,
+                            skipPush: params.SKIP_PUSH,
+                            skipSecurityScan: params.SKIP_SECURITY_SCAN,
+                            skipSmokeTests: params.SKIP_SMOKE_TESTS
+                        )
+                        env.BUILD_RESULT = result.skipped ? 'SKIPPED' : 'SUCCESS'
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            script {
+                echo "✅ elohim-edgenode: ${env.BUILD_RESULT}"
+                if (env.IMAGE_TAG_GIT) {
+                    echo "Pushed harbor.ethosengine.com/ethosengine/elohim-edgenode:{latest,${env.IMAGE_TAG_DATED},${env.IMAGE_TAG_GIT}}"
+                    echo "Canary one non-genesis leecher at a specific tag; watch smaps_anon{class=other} flatten + stay in-mesh; roll, genesis pair last."
+                }
+            }
+        }
+    }
+}
