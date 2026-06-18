@@ -96,6 +96,8 @@ spec:
                description: 'ethosengine/holochain branch (conductor source + tx5 [patch] + #5719)')
         string(name: 'TX5_BRANCH', defaultValue: 'elohim-0.8.1-zombie-fix',
                description: 'ethosengine/tx5 branch (zombie-fix #194/#199)')
+        string(name: 'HC_FEATURES', defaultValue: 'sqlite-encrypted,wasmer_sys,backend-go-pion',
+               description: 'Conductor cargo --features. Default = production set. Append ",jemalloc-prof" to build the native heap-PROFILING leak-hunt canary (installs tikv-jemallocator as global allocator; run that image on ONE pod with _RJEM_MALLOC_CONF=prof:true,... — NOT for the fleet).')
         booleanParam(name: 'BUILD_STORAGE_CANARY', defaultValue: false,
                      description: 'Optional standalone elohim-storage-zombiefix image. Normally OFF: production elohim-storage now embeds the patched conductor directly (elohim-storage/Dockerfile CONDUCTOR_SOURCE_IMAGE=elohim-edgenode:latest), so the genesis pipeline deploys it fleet-wide without this. This job just needs to publish elohim-edgenode:latest.')
         booleanParam(name: 'SKIP_PUSH', defaultValue: false,
@@ -114,6 +116,7 @@ spec:
                         echo "Building elohim-edgenode from che-devworkspaces ${env.BRANCH_NAME ?: 'main'}"
                         echo "  holochain fork branch: ${params.HC_BRANCH}"
                         echo "  tx5 fork branch:       ${params.TX5_BRANCH}"
+                        echo "  conductor features:    ${params.HC_FEATURES}"
                     }
                 }
             }
@@ -127,7 +130,7 @@ spec:
                             imageName: 'elohim-edgenode',
                             dockerfile: 'containers/elohim-edgenode',
                             registry: 'harbor.ethosengine.com/ethosengine',
-                            buildArgs: [HC_BRANCH: params.HC_BRANCH, TX5_BRANCH: params.TX5_BRANCH],
+                            buildArgs: [HC_BRANCH: params.HC_BRANCH, TX5_BRANCH: params.TX5_BRANCH, HC_FEATURES: params.HC_FEATURES],
                             skipBaseImageCheck: true,   // trigger is the fork commits, not the holo-host base
                             forceBuild: true,
                             skipPush: params.SKIP_PUSH
