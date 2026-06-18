@@ -96,10 +96,10 @@ spec:
                description: 'ethosengine/holochain branch (conductor source + tx5 [patch] + #5719)')
         string(name: 'TX5_BRANCH', defaultValue: 'elohim-0.8.1-zombie-fix',
                description: 'ethosengine/tx5 branch (zombie-fix #194/#199)')
-        string(name: 'HC_FEATURES', defaultValue: 'sqlite-encrypted,wasmer_sys,backend-go-pion',
-               description: 'Conductor cargo --features. Default = production set. Append ",jemalloc-prof" to build the native heap-PROFILING leak-hunt canary (installs tikv-jemallocator as global allocator; run that image on ONE pod with _RJEM_MALLOC_CONF=prof:true,... — NOT for the fleet).')
+        string(name: 'HC_FEATURES', defaultValue: 'sqlite-encrypted,wasmer_sys,backend-go-pion,jemalloc-prof',
+               description: 'Conductor cargo --features. DEFAULT INCLUDES jemalloc-prof (the native heap-PROFILING leak-hunt build). When jemalloc-prof is present, this job pushes ISOLATED images — elohim-edgenode-prof / elohim-storage-prof — so it NEVER overwrites the fleet tag elohim-edgenode:latest (which the monorepo storage embeds). To build the PRODUCTION fleet conductor instead, set this to "sqlite-encrypted,wasmer_sys,backend-go-pion" (drop jemalloc-prof) → pushes elohim-edgenode:latest as before.')
         booleanParam(name: 'BUILD_STORAGE_CANARY', defaultValue: false,
-                     description: 'Optional standalone elohim-storage-zombiefix image. Normally OFF: production elohim-storage now embeds the patched conductor directly (elohim-storage/Dockerfile CONDUCTOR_SOURCE_IMAGE=elohim-edgenode:latest), so the genesis pipeline deploys it fleet-wide without this. This job just needs to publish elohim-edgenode:latest.')
+                     description: 'Also build the deployable storage image embedding the conductor (the consolidated elohim-node container runs the storage image). REQUIRED to get a kubectl-deployable artifact. Profiling → elohim-storage-prof; production → elohim-storage-zombiefix.')
         booleanParam(name: 'SKIP_PUSH', defaultValue: false,
                      description: 'Build only, no Harbor push (validation)')
     }
@@ -126,8 +126,15 @@ spec:
             steps {
                 container('builder') {
                     script {
+                        // jemalloc-prof builds push ISOLATED image names so they never
+                        // overwrite the fleet's elohim-edgenode:latest (which the monorepo
+                        // storage embeds via CONDUCTOR_SOURCE_IMAGE). Drop jemalloc-prof from
+                        // HC_FEATURES to build the production fleet conductor at :latest.
+                        def profiling = params.HC_FEATURES.contains('jemalloc-prof')
+                        env.EDGE_IMAGE = profiling ? 'elohim-edgenode-prof' : 'elohim-edgenode'
+                        echo "  profiling build: ${profiling}  ->  image: ${env.EDGE_IMAGE}"
                         def result = buildDevspaceImage(
-                            imageName: 'elohim-edgenode',
+                            imageName: env.EDGE_IMAGE,
                             dockerfile: 'containers/elohim-edgenode',
                             registry: 'harbor.ethosengine.com/ethosengine',
                             buildArgs: [HC_BRANCH: params.HC_BRANCH, TX5_BRANCH: params.TX5_BRANCH, HC_FEATURES: params.HC_FEATURES],
@@ -146,22 +153,26 @@ spec:
             steps {
                 container('builder') {
                     script {
-                        // Fast binary swap (no Rust rebuild): the production storage SERVICE
-                        // (unchanged) + our just-built patched conductor. This is the artifact
-                        // actually deployed to the consolidated elohim-node container, since the
-                        // storage image carries the embedded conductor.
-                        // No buildArgs: the Dockerfile defaults STORAGE_BASE + CONDUCTOR_SOURCE to
-                        // :latest — i.e. production elohim-storage:latest + the edgenode:latest this
-                        // same run just pushed in the stage above.
+                        // Fast binary swap (no Rust rebuild): production storage SERVICE
+                        // (unchanged) + the conductor this run just built. This is the artifact
+                        // deployed to the consolidated elohim-node container.
+                        // Profiling → isolated name elohim-storage-prof, and we must point
+                        // CONDUCTOR_SOURCE at the isolated elohim-edgenode-prof (the Dockerfile
+                        // default is edgenode:latest = the fleet conductor, which a prof run does
+                        // NOT push). Production → unchanged elohim-storage-zombiefix + defaults.
+                        def profiling = params.HC_FEATURES.contains('jemalloc-prof')
+                        def storageImage = profiling ? 'elohim-storage-prof' : 'elohim-storage-zombiefix'
+                        def storageArgs = profiling ? [CONDUCTOR_SOURCE: 'harbor.ethosengine.com/ethosengine/elohim-edgenode-prof:latest'] : [:]
                         buildDevspaceImage(
-                            imageName: 'elohim-storage-zombiefix',
+                            imageName: storageImage,
                             dockerfile: 'containers/elohim-storage-zombiefix',
                             registry: 'harbor.ethosengine.com/ethosengine',
+                            buildArgs: storageArgs,
                             skipBaseImageCheck: true,
                             forceBuild: true,
                             skipPush: params.SKIP_PUSH
                         )
-                        echo "Canary storage: harbor.ethosengine.com/ethosengine/elohim-storage-zombiefix:{latest,${env.IMAGE_TAG_DATED},${env.IMAGE_TAG_GIT}} = elohim-storage:dev-latest + patched conductor"
+                        echo "Canary storage: harbor.ethosengine.com/ethosengine/${storageImage}:{latest,${env.IMAGE_TAG_DATED},${env.IMAGE_TAG_GIT}} = elohim-storage:dev-latest + ${profiling ? 'PROFILING (jemalloc-prof)' : 'patched'} conductor"
                     }
                 }
             }
@@ -173,7 +184,7 @@ spec:
             script {
                 echo "✅ elohim-edgenode: ${env.BUILD_RESULT}"
                 if (env.IMAGE_TAG_GIT) {
-                    echo "Pushed harbor.ethosengine.com/ethosengine/elohim-edgenode:{latest,${env.IMAGE_TAG_DATED},${env.IMAGE_TAG_GIT}}"
+                    echo "Pushed harbor.ethosengine.com/ethosengine/${env.EDGE_IMAGE ?: 'elohim-edgenode'}:{latest,${env.IMAGE_TAG_DATED},${env.IMAGE_TAG_GIT}}"
                     echo "Canary one non-genesis leecher at a specific tag; watch smaps_anon{class=other} flatten + stay in-mesh; roll, genesis pair last."
                 }
             }
