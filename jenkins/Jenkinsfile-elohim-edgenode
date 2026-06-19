@@ -96,10 +96,10 @@ spec:
                description: 'ethosengine/holochain branch (conductor source + tx5 [patch] + #5719)')
         string(name: 'TX5_BRANCH', defaultValue: 'elohim-0.8.1-zombie-fix',
                description: 'ethosengine/tx5 branch (zombie-fix #194/#199)')
-        string(name: 'HC_FEATURES', defaultValue: 'sqlite-encrypted,wasmer_sys,backend-go-pion,jemalloc-prof',
-               description: 'Conductor cargo --features. DEFAULT INCLUDES jemalloc-prof (the native heap-PROFILING leak-hunt build). When jemalloc-prof is present, this job pushes ISOLATED images — elohim-edgenode-prof / elohim-storage-prof — so it NEVER overwrites the fleet tag elohim-edgenode:latest (which the monorepo storage embeds). To build the PRODUCTION fleet conductor instead, set this to "sqlite-encrypted,wasmer_sys,backend-go-pion" (drop jemalloc-prof) → pushes elohim-edgenode:latest as before.')
+        string(name: 'HC_FEATURES', defaultValue: 'sqlite-encrypted,wasmer_sys,backend-go-pion,jemalloc',
+               description: 'Conductor cargo --features. DEFAULT is jemalloc (the PRODUCTION allocator cure: jemalloc as global allocator with C-side malloc interposition, profiling OFF) → pushes the fleet tag elohim-edgenode:latest (which the monorepo storage embeds). Do NOT drop jemalloc — "sqlite-encrypted,wasmer_sys,backend-go-pion" alone is the glibc build that LEAKED. To build the debug heap-PROFILING canary instead, set this to "sqlite-encrypted,wasmer_sys,backend-go-pion,jemalloc-prof" → pushes ISOLATED images elohim-edgenode-prof / elohim-storage-prof, never touching :latest.')
         booleanParam(name: 'BUILD_STORAGE_CANARY', defaultValue: false,
-                     description: 'Also build the deployable storage image embedding the conductor (the consolidated elohim-node container runs the storage image). REQUIRED to get a kubectl-deployable artifact. Profiling → elohim-storage-prof; production → elohim-storage-zombiefix.')
+                     description: 'Also build the deployable storage image embedding the conductor (the consolidated elohim-node container runs the storage image). REQUIRED to get a kubectl-deployable artifact. Production (default jemalloc) → elohim-storage-zombiefix embedding elohim-edgenode:latest; profiling (jemalloc-prof) → isolated elohim-storage-prof embedding elohim-edgenode-prof. This is the artifact used to canary ONE anchor before the monorepo fleet roll.')
         booleanParam(name: 'SKIP_PUSH', defaultValue: false,
                      description: 'Build only, no Harbor push (validation)')
     }
@@ -128,8 +128,10 @@ spec:
                     script {
                         // jemalloc-prof builds push ISOLATED image names so they never
                         // overwrite the fleet's elohim-edgenode:latest (which the monorepo
-                        // storage embeds via CONDUCTOR_SOURCE_IMAGE). Drop jemalloc-prof from
-                        // HC_FEATURES to build the production fleet conductor at :latest.
+                        // storage embeds via CONDUCTOR_SOURCE_IMAGE). The PRODUCTION default
+                        // (HC_FEATURES contains 'jemalloc', NOT 'jemalloc-prof') publishes
+                        // :latest. Use 'jemalloc-prof' for a profiling canary; never drop
+                        // jemalloc entirely — the bare glibc set re-leaks.
                         def profiling = params.HC_FEATURES.contains('jemalloc-prof')
                         env.EDGE_IMAGE = profiling ? 'elohim-edgenode-prof' : 'elohim-edgenode'
                         echo "  profiling build: ${profiling}  ->  image: ${env.EDGE_IMAGE}"
@@ -156,10 +158,11 @@ spec:
                         // Fast binary swap (no Rust rebuild): production storage SERVICE
                         // (unchanged) + the conductor this run just built. This is the artifact
                         // deployed to the consolidated elohim-node container.
-                        // Profiling → isolated name elohim-storage-prof, and we must point
-                        // CONDUCTOR_SOURCE at the isolated elohim-edgenode-prof (the Dockerfile
-                        // default is edgenode:latest = the fleet conductor, which a prof run does
-                        // NOT push). Production → unchanged elohim-storage-zombiefix + defaults.
+                        // Profiling (jemalloc-prof) → isolated name elohim-storage-prof, and we
+                        // must point CONDUCTOR_SOURCE at the isolated elohim-edgenode-prof (the
+                        // Dockerfile default is edgenode:latest = the fleet jemalloc conductor,
+                        // which a prof run does NOT push). Production (default jemalloc) →
+                        // unchanged elohim-storage-zombiefix + defaults (embeds edgenode:latest).
                         def profiling = params.HC_FEATURES.contains('jemalloc-prof')
                         def storageImage = profiling ? 'elohim-storage-prof' : 'elohim-storage-zombiefix'
                         def storageArgs = profiling ? [CONDUCTOR_SOURCE: 'harbor.ethosengine.com/ethosengine/elohim-edgenode-prof:latest'] : [:]
