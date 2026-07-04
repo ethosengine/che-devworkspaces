@@ -22,6 +22,11 @@ RUN dnf install -y nodejs npm && dnf clean all
 # Native installer puts binary in ~/.local/bin which gets wiped by PVC mounts in Che
 RUN npm install -g @anthropic-ai/claude-code
 
+# Install OpenAI Codex CLI globally via npm (installs to /usr/local/bin/codex)
+# Same rationale as Claude Code above: the standalone installer (chatgpt.com/codex/install.sh)
+# drops the binary in ~/.local/bin, which PVC mounts wipe in Che. npm-global survives.
+RUN npm install -g @openai/codex
+
 # Install Java 21 via dnf
 RUN dnf install -y java-21-openjdk-headless java-21-openjdk-devel && \
     dnf clean all
@@ -137,4 +142,5 @@ ENV PATH=/usr/lib/jvm/java-21-openjdk/bin:$PATH
 
 # Verify installation
 RUN claude --version
+RUN codex --version
 RUN java -version
