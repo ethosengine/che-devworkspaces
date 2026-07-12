@@ -11,6 +11,17 @@
 
 FROM harbor.ethosengine.com/ethosengine/ci-builder:latest
 
+# python3-nacl + python3-websockets — arms the signal-bus leg of
+# scripts/ci/substrate-seam-smoke.sh (elohim repo), which drives
+# doorway/doorway-service/tools/sbd-cross-relay-probe.py from this
+# 'builder' container in the edge pipeline. Debian apt packages (not pip)
+# because bookworm's system Python is PEP 668 externally-managed — apt
+# resolves python3 itself as a transitive dependency, no venv needed.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-nacl \
+    python3-websockets \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Nix via the Determinate Systems nix-installer.
 #
 # Pin the version + sha256-verify the binary instead of curl-piping the
