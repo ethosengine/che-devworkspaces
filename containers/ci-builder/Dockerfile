@@ -75,8 +75,12 @@ RUN BUILDKIT_VERSION=0.12.5 && \
     chmod +x /usr/local/bin/buildctl && \
     rm -rf /tmp/bin
 
-# Enable pnpm via corepack (bundled with Node.js)
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Install the workspace-pinned pnpm directly. Corepack's prepared package cache
+# is user-scoped, so a Jenkins pod running as a different UID can re-download
+# pnpm during a build. Keeping the executable in /usr/local/bin makes both the
+# builder and its ci-playwright descendant independent of that runtime fetch.
+RUN npm install --global pnpm@10.30.3 && \
+    test "$(pnpm --version)" = "10.30.3"
 
 # Install SonarQube Scanner and configure to use system JRE
 RUN curl -o sonar-scanner.zip -L https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-6.2.1.4610-linux-x64.zip && \
