@@ -142,7 +142,15 @@ New versions will be reported after build completion.
                             imageName: 'udi-plus',
                             dockerfile: 'containers/udi-plus',
                             registry: 'harbor.ethosengine.com/devspaces',
-                            baseImage: 'quay.io/devfile/universal-developer-image:ubi9-latest',
+                            // MUST match containers/udi-plus/Dockerfile's FROM.
+                            // This gate skips the whole build when the base
+                            // digest is unchanged, so a wrong value silently
+                            // decouples rebuilds from the real base. It named
+                            // universal-developer-image:ubi9-latest — an image
+                            // this Dockerfile deliberately moved OFF of (see
+                            // its header: base/ubi10 was chosen because
+                            // ubi10-latest only exists for base).
+                            baseImage: 'harbor.ethosengine.com/proxy-quay/devfile/base-developer-image:ubi10-latest',
                             forceBuild: params.FORCE_BUILD,
                             skipPush: params.SKIP_PUSH,
                             skipSecurityScan: params.SKIP_SECURITY_SCAN,

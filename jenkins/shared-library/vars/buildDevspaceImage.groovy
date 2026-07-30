@@ -19,7 +19,14 @@
  *     imageName: 'udi-plus',
  *     dockerfile: 'containers/udi-plus',
  *     registry: 'harbor.ethosengine.com/devspaces',
- *     baseImage: 'quay.io/devfile/universal-developer-image:ubi9-latest',
+ *     // MUST equal the FROM line of the Dockerfile at `dockerfile:`.
+ *     // When skipBaseImageCheck is false this value gates the ENTIRE build:
+ *     // an unchanged digest returns skipped:true, which also suppresses the
+ *     // caller's downstream cascade. A wrong value therefore decouples
+ *     // rebuilds from the real base, silently. (This example previously
+ *     // named universal-developer-image:ubi9-latest and was copied verbatim
+ *     // into Jenkinsfile-udi-plus, whose Dockerfile is base/ubi10.)
+ *     baseImage: 'harbor.ethosengine.com/proxy-quay/devfile/base-developer-image:ubi10-latest',
  *     buildArgs: [:],
  *     skipBaseImageCheck: false
  *   )
