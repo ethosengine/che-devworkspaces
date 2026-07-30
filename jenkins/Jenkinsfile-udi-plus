@@ -152,12 +152,18 @@ New versions will be reported after build completion.
                         env.BUILD_RESULT = result.skipped ? 'SKIPPED' : 'SUCCESS'
                         env.IMAGE_NAME = result.fullImageName
 
-                        // Trigger downstream builds if this was updated
+                        // Trigger downstream builds if this was updated.
+                        // devspaces-udi-plus-gae is deliberately NOT here:
+                        // that pipeline is ARCHIVED (manual builds only, its
+                        // own `triggers { }` block is empty). An upstream
+                        // `build job:` overrides that, so the cascade kept
+                        // resurrecting it — and it kept failing (#33 FAILURE,
+                        // 2026-07-12, triggered from here). Build it by hand
+                        // if the GAE/Python 2.7 image is ever needed again.
                         if (!result.skipped && !params.SKIP_PUSH) {
                             echo 'udi-plus updated - triggering downstream builds'
                             build job: 'devspaces-rust-nix-dev', wait: false
                             build job: 'devspaces-udi-plus-angular', wait: false
-                            build job: 'devspaces-udi-plus-gae', wait: false
                             build job: 'devspaces-udi-plus-mem', wait: false
                         }
                     }

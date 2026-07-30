@@ -21,7 +21,7 @@ quay.io/devfile/universal-developer-image:ubi9-latest
   └─> udi-plus (base with Claude Code CLI + Java 21)
        ├─> rust-nix-dev (Rust + Nix + Holochain)
        ├─> udi-plus-angular (Angular + Node.js)
-       └─> udi-plus-gae (Google App Engine + Python 2.7)
+       └─> udi-plus-gae (Google App Engine + Python 2.7) — ARCHIVED
 ```
 
 - **udi-plus**: Base UDI with Claude Code pre-installed
@@ -35,8 +35,9 @@ quay.io/devfile/universal-developer-image:ubi9-latest
 - **udi-plus-angular**: Angular development
   - Registry: `harbor.ethosengine.com/devspaces/udi-plus-angular`
 
-- **udi-plus-gae**: Google App Engine with Python 2.7
+- **udi-plus-gae**: Google App Engine with Python 2.7 — **ARCHIVED**
   - Registry: `harbor.ethosengine.com/devspaces/udi-plus-gae`
+  - Manual builds only; deliberately excluded from the udi-plus cascade
 
 ### Building Images
 

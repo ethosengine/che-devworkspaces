@@ -39,7 +39,7 @@ All images are built via Jenkins pipelines and hosted on Harbor registry.
 <tr>
 <td><a href="https://harbor.ethosengine.com/harbor/projects/4/repositories/udi-plus-gae" target="_blank"><strong>harbor.ethosengine.com/devspaces/udi-plus-gae</strong></a></td>
 <td><a href="https://jenkins.ethosengine.com/view/ethosimages/job/devspaces-udi-plus-gae/job/main/" target="_blank"><img src="https://jenkins.ethosengine.com/buildStatus/icon?job=devspaces-udi-plus-gae%2Fmain" alt="Build Status"></a></td>
-<td>Google App Engine with Python 2.7 support</td>
+<td>Google App Engine with Python 2.7 support — <strong>ARCHIVED</strong>, manual builds only (not in the udi-plus cascade)</td>
 </tr>
 </tbody>
 </table>
@@ -55,7 +55,7 @@ quay.io/devfile/universal-developer-image:ubi9-latest
   └─> udi-plus (base image with Claude Code)
        ├─> rust-nix-dev (Rust + Nix + Holochain)
        ├─> udi-plus-angular (Angular + Node.js)
-       └─> udi-plus-gae (GAE + Python 2.7)
+       └─> udi-plus-gae (GAE + Python 2.7) — ARCHIVED, manual builds only
 ```
 
 ## Overview
