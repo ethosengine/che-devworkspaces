@@ -33,14 +33,18 @@ USER root
 # Nexus is deliberately reserved for first-party components) behind a sha256
 # gate, matching the pinned-binary pattern used for kubeconform/nerdctl below.
 # Bumping: update BOTH args from https://nodejs.org/dist/v<X>/SHASUMS256.txt.
+#
+# .tar.GZ, not .tar.xz: this base has no xz binary, so `tar -xJ` dies with
+# "tar (child): xz: Cannot exec" AFTER the checksum passes (#323). gzip is
+# present — the kubeconform/nerdctl/buildctl steps below already rely on it.
 ARG NODE_VERSION=24.18.1
-ARG NODE_SHA256=d6c664df3f3f61458e8c277585571328522d705166723a7c7823a9253a4d15a0
-RUN curl -fsSL -o /tmp/node.tar.xz \
-        "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" && \
-    echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - && \
-    tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
+ARG NODE_SHA256=9f5eb6ac21845a66c493c91a253b1da32fd684e89e9b7202d4936982336be4ca
+RUN curl -fsSL -o /tmp/node.tar.gz \
+        "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" && \
+    echo "${NODE_SHA256}  /tmp/node.tar.gz" | sha256sum -c - && \
+    tar -xzf /tmp/node.tar.gz -C /usr/local --strip-components=1 \
         --exclude CHANGELOG.md --exclude LICENSE --exclude README.md && \
-    rm -f /tmp/node.tar.xz && \
+    rm -f /tmp/node.tar.gz && \
     test "v${NODE_VERSION}" = "$(node --version)" && \
     echo "node $(node --version) / npm $(npm --version)"
 
