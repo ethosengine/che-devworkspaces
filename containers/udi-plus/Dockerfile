@@ -15,8 +15,34 @@ FROM harbor.ethosengine.com/proxy-quay/devfile/base-developer-image:ubi10-latest
 
 USER root
 
-# Install Node.js for npm-based project tooling
-RUN dnf install -y nodejs npm && dnf clean all
+# Install Node.js 24 (LTS "Krypton") from the official pinned tarball.
+#
+# NOT `dnf install nodejs`: UBI10's appstream tops out at nodejs 22.x and
+# exposes no module stream to enable a newer one (verified 2026-07-30 against
+# the live base — `dnf module list nodejs` finds nothing), so dnf can never
+# reach the floor the elohim monorepo declares in its root package.json
+# (engines.node ">=24.15"). Angular 22.1.0 itself wants
+# ^22.22.3 || ^24.15.0 || >=26.0.0, and CI builds on node:24-bookworm
+# (ci-builder), so pinning here puts devspaces and CI on the same major
+# instead of leaving a skew that RHEL's packaging decisions control.
+#
+# The unpinned dnf install was also silently version-drifting: it sat at
+# 22.22.2 — one patch BELOW Angular 22's floor — until 22.23.1 landed.
+#
+# Fetched from nodejs.org (no Nexus proxy exists for nodejs.org/dist, and
+# Nexus is deliberately reserved for first-party components) behind a sha256
+# gate, matching the pinned-binary pattern used for kubeconform/nerdctl below.
+# Bumping: update BOTH args from https://nodejs.org/dist/v<X>/SHASUMS256.txt.
+ARG NODE_VERSION=24.18.1
+ARG NODE_SHA256=d6c664df3f3f61458e8c277585571328522d705166723a7c7823a9253a4d15a0
+RUN curl -fsSL -o /tmp/node.tar.xz \
+        "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" && \
+    echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - && \
+    tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 \
+        --exclude CHANGELOG.md --exclude LICENSE --exclude README.md && \
+    rm -f /tmp/node.tar.xz && \
+    test "v${NODE_VERSION}" = "$(node --version)" && \
+    echo "node $(node --version) / npm $(npm --version)"
 
 # Install Claude Code globally via npm (installs to /usr/local/bin/claude)
 # Native installer puts binary in ~/.local/bin which gets wiped by PVC mounts in Che
