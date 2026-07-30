@@ -114,8 +114,8 @@ spec:
                         // missing item shouldn't turn this build red.
                         if (!result.skipped && !params.SKIP_PUSH) {
                             try {
-                                echo 'ci-builder updated — triggering devspaces-ci-builder-nix'
-                                build job: 'devspaces-ci-builder-nix', wait: false
+                                echo 'ci-builder updated — triggering ethosengine-ci-builder-nix/main'
+                                build job: '/ethosengine-ci-builder-nix/main', wait: false
                             } catch (err) {
                                 echo "⚠️  Cascade trigger skipped: ${err.message}"
                             }
