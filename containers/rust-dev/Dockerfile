@@ -105,19 +105,22 @@ RUN rustc --version && cargo --version && rust-analyzer --version && \
 #   https://github.com/paullouisageneau/libdatachannel
 # ============================================================================
 #
-# The fetch step writes a /tmp/fetch/.cargo/config.toml that mirrors the
-# elohim project's crates-io -> Nexus replacement. Without this, `cargo
-# fetch` here uses the default crates.io index and extracts the source
-# under registry/src/index.crates.io-<hash>/..., but at devspace runtime
-# cargo extracts the *same tarball* under
-# registry/src/nexus.ethosengine.com-<hash>/... — a different path that
-# wouldn't get patched (caught 2026-05-27: sweettest-check failed in
-# udi-plus-mem-rust-nix; same bug shape applies here). The patch step
-# loops over every matching libdatachannel/CMakeLists.txt under
-# registry/src so any future mirror addition still ends up patched.
-RUN mkdir -p /tmp/fetch/.cargo && \
-    printf '[source.crates-io]\nreplace-with = "nexus"\n\n[source.nexus]\nregistry = "sparse+https://nexus.ethosengine.com/repository/cargo/"\n' \
-        > /tmp/fetch/.cargo/config.toml && \
+# The fetch step must use the SAME registry the devspace runtime uses, or
+# the crate source lands under a registry/src/<endpoint>-<hash>/ directory
+# cargo never reads at runtime and the patch below is inert (caught
+# 2026-05-27: sweettest-check failed in udi-plus-mem-rust-nix; same bug
+# shape applies here).
+#
+# That registry is now crates.io DIRECT. The elohim monorepo dropped its
+# crates-io -> Nexus source replacement on 2026-07-30 (ecc65384f): our
+# Nexus is Sonatype Community Edition, whose 100k-requests/day cap is
+# enforced by refusing new components, and breaching it takes down
+# first-party PUBLISHING — the one thing only Nexus can do. The proxy no
+# longer serves un-cached crates (it 404s them), so mirroring here is both
+# path-wrong and broken. The patch step loops over every matching
+# libdatachannel/CMakeLists.txt under registry/src so re-introducing a
+# mirror later still ends up patched.
+RUN mkdir -p /tmp/fetch && \
     cd /tmp/fetch && \
     cargo init --quiet --name fetch-only && \
     cargo add --quiet datachannel-sys@=0.23.0 && \

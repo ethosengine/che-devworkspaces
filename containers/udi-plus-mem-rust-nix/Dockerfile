@@ -91,20 +91,25 @@ RUN rustc --version && cargo --version && rust-analyzer --version && \
 # Upstream issue: find_package(OpenSSL REQUIRED) called without ZLIB first.
 # Remove when upstream fixes: https://github.com/paullouisageneau/libdatachannel
 #
-# The fetch step writes a .cargo/config.toml that mirrors the elohim project's
-# crates-io -> Nexus replacement (/projects/elohim/.cargo/config.toml). Without
-# this, `cargo fetch` here uses the default crates.io index and extracts the
-# source under registry/src/index.crates.io-<hash>/..., but at devspace runtime
-# cargo extracts the *same tarball* under registry/src/nexus.ethosengine.com-<hash>/...
-# — a different path that wouldn't get patched. Earlier image builds had this
-# bug (caught 2026-05-27: pre-push sweettest-check failed in devspace, CI fine).
+# The fetch step must use the SAME registry the devspace runtime uses, or the
+# crate source lands under a registry/src/<endpoint>-<hash>/ directory cargo
+# never reads at runtime and the patch below is inert (caught 2026-05-27:
+# pre-push sweettest-check failed in the devspace while CI was fine).
+#
+# That registry is now crates.io DIRECT. The elohim monorepo dropped its
+# crates-io -> Nexus source replacement on 2026-07-30 (ecc65384f): our Nexus is
+# Sonatype Community Edition, whose 100k-requests/day cap is enforced by
+# refusing new components, and a monorepo-wide cold cargo fetch spends that
+# budget on a free public registry — breaching it takes down first-party
+# PUBLISHING, the one thing only Nexus can do. So this step fetches from
+# crates.io too; both sides extract under registry/src/index.crates.io-<hash>/.
+# Keeping the mirror here after the client config dropped it is what broke this
+# image: the Nexus cargo proxy no longer serves un-cached crates and 404s them.
 #
 # The patch step loops over every matching libdatachannel/CMakeLists.txt under
-# registry/src so any future addition of a mirror still ends up patched.
+# registry/src so re-introducing a mirror later still ends up patched.
 # ============================================================================
-RUN mkdir -p /tmp/fetch/.cargo && \
-    printf '[source.crates-io]\nreplace-with = "nexus"\n\n[source.nexus]\nregistry = "sparse+https://nexus.ethosengine.com/repository/cargo/"\n' \
-        > /tmp/fetch/.cargo/config.toml && \
+RUN mkdir -p /tmp/fetch && \
     cd /tmp/fetch && \
     cargo init --quiet --name fetch-only && \
     cargo add --quiet datachannel-sys@=0.23.0 && \
