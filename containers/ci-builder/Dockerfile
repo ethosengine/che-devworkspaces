@@ -2,7 +2,7 @@
 #podman push harbor.ethosengine.com/ethosengine/ci-builder:latest
 
 # Multi-tool CI Builder Image - Using Debian for better Cypress compatibility
-FROM node:20-bookworm
+FROM node:24-bookworm
 
 # Install Cypress dependencies as per official documentation
 RUN apt-get update && apt-get install -y \
