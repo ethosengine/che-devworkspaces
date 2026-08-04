@@ -92,11 +92,11 @@ spec:
     }
 
     parameters {
-        string(name: 'HC_BRANCH', defaultValue: 'elohim-0.6',
+        string(name: 'HC_BRANCH', defaultValue: 'elohim-0.6.3',
                description: 'ethosengine/holochain branch (conductor source + tx5 [patch] + #5719)')
         string(name: 'TX5_BRANCH', defaultValue: 'elohim-0.8.1-zombie-fix',
                description: 'ethosengine/tx5 branch (zombie-fix #194/#199)')
-        string(name: 'HC_FEATURES', defaultValue: 'sqlite-encrypted,wasmer_sys,backend-go-pion,jemalloc',
+        string(name: 'HC_FEATURES', defaultValue: 'sqlite-encrypted,wasmer_sys,transport-tx5-backend-go-pion,jemalloc',
                description: 'Conductor cargo --features. DEFAULT is jemalloc (the PRODUCTION allocator cure: jemalloc as global allocator with C-side malloc interposition, profiling OFF) → pushes the fleet tag elohim-edgenode:latest (which the monorepo storage embeds). Do NOT drop jemalloc — "sqlite-encrypted,wasmer_sys,backend-go-pion" alone is the glibc build that LEAKED. To build the debug heap-PROFILING canary instead, set this to "sqlite-encrypted,wasmer_sys,backend-go-pion,jemalloc-prof" → pushes ISOLATED images elohim-edgenode-prof / elohim-storage-prof, never touching :latest.')
         booleanParam(name: 'BUILD_STORAGE_CANARY', defaultValue: false,
                      description: 'Also build the deployable storage image embedding the conductor (the consolidated elohim-node container runs the storage image). REQUIRED to get a kubectl-deployable artifact. Production (default jemalloc) → elohim-storage-zombiefix embedding elohim-edgenode:latest; profiling (jemalloc-prof) → isolated elohim-storage-prof embedding elohim-edgenode-prof. This is the artifact used to canary ONE anchor before the monorepo fleet roll.')
