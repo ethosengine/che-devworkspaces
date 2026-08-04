@@ -28,7 +28,12 @@
  *     // into Jenkinsfile-udi-plus, whose Dockerfile is base/ubi10.)
  *     baseImage: 'harbor.ethosengine.com/proxy-quay/devfile/base-developer-image:ubi10-latest',
  *     buildArgs: [:],
- *     skipBaseImageCheck: false
+ *     skipBaseImageCheck: false,
+ *     // Optional: additional literal tags pushed to the SAME digest alongside
+ *     // latest/dated/git (e.g. a named rollback anchor like 'hc-elohim-0.6.3').
+ *     // Caller is responsible for sanitizing to valid OCI tag chars. Ignored
+ *     // when skipPush is true (validation-only builds push nothing).
+ *     extraTags: []
  *   )
  */
 def call(Map config) {
@@ -47,6 +52,7 @@ def call(Map config) {
     def skipSecurityScan = config.skipSecurityScan ?: false
     def skipSmokeTests = config.skipSmokeTests ?: false
     def forceBuild = config.forceBuild ?: false
+    def extraTags = config.extraTags ?: []
 
     def datestamp = sh(script: 'date +%Y-%m-%d', returnStdout: true).trim()
     def gitHash = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
@@ -140,13 +146,11 @@ def call(Map config) {
         echo "✅ ${config.imageName} build validated"
     } else {
         // Push directly from BuildKit → Harbor. Multi-name output writes
-        // all three tags (latest, dated, git-hash) to the same digest
-        // in one push.
-        def outputNames = [
-            "${registry}/${config.imageName}:${imageTagLatest}",
-            "${registry}/${config.imageName}:${imageTagDated}",
-            "${registry}/${config.imageName}:${imageTagGit}"
-        ].join(',')
+        // all tags (latest, dated, git-hash, + any caller-supplied extraTags —
+        // e.g. a rolling named rollback anchor) to the same digest in one push.
+        def outputNames = ([imageTagLatest, imageTagDated, imageTagGit] + extraTags).collect {
+            "${registry}/${config.imageName}:${it}"
+        }.join(',')
         def outputArg = "type=image,\"name=${outputNames}\",push=true"
 
         echo "=== Building & pushing ${config.imageName} to Harbor ==="
@@ -180,6 +184,9 @@ EOF
             """
         }
         echo "✅ ${config.imageName} built and pushed to Harbor"
+        if (extraTags) {
+            echo "   extra tags: ${extraTags.join(', ')}"
+        }
     }
 
     // ------------------------------------------------------------------
@@ -338,6 +345,7 @@ EOF
     return [
         skipped: false,
         tags: imageTags,
+        extraTags: extraTags,
         registry: registry,
         fullImageName: "${registry}/${config.imageName}:${imageTagDated}"
     ]

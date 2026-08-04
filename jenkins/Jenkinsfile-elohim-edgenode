@@ -9,11 +9,23 @@
 // Currently carries the tx5/go-pion zombie-PeerConnection leak fix (tx5 #194/#199)
 // + holochain #5719. Change HC_BRANCH / TX5_BRANCH to build a different patch set.
 //
-// Pushes harbor.ethosengine.com/ethosengine/elohim-edgenode:{latest,<date>,<git>}.
+// Pushes harbor.ethosengine.com/ethosengine/elohim-edgenode:{latest,<date>,<git>,hc-<HC_BRANCH>}.
 //   NOTE: shares that Harbor repo with the monorepo edge pipeline, which pushes
 //   distinct `1.0.0-dev-<hash>` tags (the deploy uses those specific tags, so it is
 //   NOT affected). This job's tags are the custom from-source build; point a canary
 //   leecher at a SPECIFIC tag from here. To fully isolate, change imageName below.
+//   The 4th tag — `hc-<HC_BRANCH>` (`/` sanitized to `-` for OCI tag validity, e.g.
+//   `hc-elohim-0.6.3`) — is a NAMED ROLLBACK ANCHOR: the date/git tags are
+//   semantically anonymous, so at rollback time nobody can tell which one carries
+//   which conductor line. Every non-profiling build overwrites its line's hc- tag
+//   with the latest good build, so "roll back" = "point the STS at :hc-elohim-0.6".
+//   Applies to both the edgenode image and the canary storage image (it embeds the
+//   conductor); NOT applied to the -prof path (a one-off diagnostic canary, not a
+//   rollback target). CAVEAT: Harbor's automated cleanup here only prunes dated
+//   tags (keep 3); the org-wide Harbor retention policy (keep-5-latest-artifacts)
+//   is untouched by this script and can still garbage-collect an untagged-elsewhere
+//   hc- digest — durable retention needs an operator-side Harbor rule excluding
+//   `hc-*` from that policy.
 //
 // ⚠ NOT cleared for fleet deploy until verified on a canary (kitsune2 wire-compat
 //   + go-pion feature set) — see the elohim deploy recipe.
@@ -135,6 +147,11 @@ spec:
                         def profiling = params.HC_FEATURES.contains('jemalloc-prof')
                         env.EDGE_IMAGE = profiling ? 'elohim-edgenode-prof' : 'elohim-edgenode'
                         echo "  profiling build: ${profiling}  ->  image: ${env.EDGE_IMAGE}"
+                        // Rolling named rollback anchor: only for the production (non-prof)
+                        // line — a jemalloc-prof build is a one-off diagnostic canary, not
+                        // something an operator rolls back to by conductor-line name.
+                        env.HC_TAG = 'hc-' + params.HC_BRANCH.replaceAll('/', '-')
+                        def rollbackTags = profiling ? [] : [env.HC_TAG]
                         def result = buildDevspaceImage(
                             imageName: env.EDGE_IMAGE,
                             dockerfile: 'containers/elohim-edgenode',
@@ -142,7 +159,8 @@ spec:
                             buildArgs: [HC_BRANCH: params.HC_BRANCH, TX5_BRANCH: params.TX5_BRANCH, HC_FEATURES: params.HC_FEATURES],
                             skipBaseImageCheck: true,   // trigger is the fork commits, not the holo-host base
                             forceBuild: true,
-                            skipPush: params.SKIP_PUSH
+                            skipPush: params.SKIP_PUSH,
+                            extraTags: rollbackTags
                         )
                         env.BUILD_RESULT = result.skipped ? 'SKIPPED' : 'SUCCESS'
                     }
@@ -166,6 +184,10 @@ spec:
                         def profiling = params.HC_FEATURES.contains('jemalloc-prof')
                         def storageImage = profiling ? 'elohim-storage-prof' : 'elohim-storage-zombiefix'
                         def storageArgs = profiling ? [CONDUCTOR_SOURCE: 'harbor.ethosengine.com/ethosengine/elohim-edgenode-prof:latest'] : [:]
+                        // This image embeds the conductor built above (CONDUCTOR_SOURCE_IMAGE
+                        // COPY), so it carries the same rollback-anchor treatment — production
+                        // line only, matching the edgenode stage above.
+                        def rollbackTags = profiling ? [] : [env.HC_TAG]
                         buildDevspaceImage(
                             imageName: storageImage,
                             dockerfile: 'containers/elohim-storage-zombiefix',
@@ -173,7 +195,8 @@ spec:
                             buildArgs: storageArgs,
                             skipBaseImageCheck: true,
                             forceBuild: true,
-                            skipPush: params.SKIP_PUSH
+                            skipPush: params.SKIP_PUSH,
+                            extraTags: rollbackTags
                         )
                         echo "Canary storage: harbor.ethosengine.com/ethosengine/${storageImage}:{latest,${env.IMAGE_TAG_DATED},${env.IMAGE_TAG_GIT}} = elohim-storage:dev-latest + ${profiling ? 'PROFILING (jemalloc-prof)' : 'patched'} conductor"
                     }
@@ -187,7 +210,9 @@ spec:
             script {
                 echo "✅ elohim-edgenode: ${env.BUILD_RESULT}"
                 if (env.IMAGE_TAG_GIT) {
-                    echo "Pushed harbor.ethosengine.com/ethosengine/${env.EDGE_IMAGE ?: 'elohim-edgenode'}:{latest,${env.IMAGE_TAG_DATED},${env.IMAGE_TAG_GIT}}"
+                    def rollbackTag = params.HC_FEATURES.contains('jemalloc-prof') ? null : env.HC_TAG
+                    def tagList = rollbackTag ? "latest,${env.IMAGE_TAG_DATED},${env.IMAGE_TAG_GIT},${rollbackTag}" : "latest,${env.IMAGE_TAG_DATED},${env.IMAGE_TAG_GIT}"
+                    echo "Pushed harbor.ethosengine.com/ethosengine/${env.EDGE_IMAGE ?: 'elohim-edgenode'}:{${tagList}}"
                     echo "Canary one non-genesis leecher at a specific tag; watch smaps_anon{class=other} flatten + stay in-mesh; roll, genesis pair last."
                 }
             }
