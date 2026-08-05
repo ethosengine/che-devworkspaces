@@ -109,7 +109,7 @@ spec:
         string(name: 'TX5_BRANCH', defaultValue: 'elohim-0.8.1-zombie-fix',
                description: 'ethosengine/tx5 branch (zombie-fix #194/#199)')
         string(name: 'HC_FEATURES', defaultValue: 'sqlite-encrypted,wasmer_sys,transport-tx5-backend-go-pion,jemalloc',
-               description: 'Conductor cargo --features. DEFAULT is jemalloc (the PRODUCTION allocator cure: jemalloc as global allocator with C-side malloc interposition, profiling OFF) → pushes the fleet tag elohim-edgenode:latest (which the monorepo storage embeds). Do NOT drop jemalloc — "sqlite-encrypted,wasmer_sys,transport-tx5-backend-go-pion" alone is the glibc build that LEAKED. To build the debug heap-PROFILING canary instead, set this to "sqlite-encrypted,wasmer_sys,transport-tx5-backend-go-pion,jemalloc-prof" → pushes ISOLATED images elohim-edgenode-prof / elohim-storage-prof, never touching :latest.')
+               description: 'Conductor cargo --features. DEFAULT is jemalloc (the PRODUCTION allocator cure: jemalloc as global allocator with C-side malloc interposition, profiling OFF) → pushes the fleet tag elohim-edgenode:latest (which the monorepo storage embeds). Do NOT drop jemalloc — "sqlite-encrypted,wasmer_sys,transport-tx5-backend-go-pion" alone is the glibc build that LEAKED. To build the debug heap-PROFILING canary instead, set this to "sqlite-encrypted,wasmer_sys,transport-tx5-backend-go-pion,jemalloc-prof" → pushes ISOLATED images elohim-edgenode-prof / elohim-storage-prof, never touching :latest. To build the Wave-2 IROH-TRANSPORT flip artifact, set "sqlite-encrypted,wasmer_sys,transport-iroh,jemalloc" → pushes ISOLATED elohim-edgenode-iroh / elohim-storage-iroh with rollback anchor hc-<branch>-iroh, also never touching :latest (deploy is a per-env STS image repoint — design doc 2026-08-05-wave2-relay-sovereignty-design.md D9/§4.1; requires the live self-hosted relay pair first).')
         booleanParam(name: 'BUILD_STORAGE_CANARY', defaultValue: false,
                      description: 'Also build the deployable storage image embedding the conductor (the consolidated elohim-node container runs the storage image). REQUIRED to get a kubectl-deployable artifact. Production (default jemalloc) → elohim-storage-zombiefix embedding elohim-edgenode:latest; profiling (jemalloc-prof) → isolated elohim-storage-prof embedding elohim-edgenode-prof. This is the artifact used to canary ONE anchor before the monorepo fleet roll.')
         booleanParam(name: 'SKIP_PUSH', defaultValue: false,
@@ -145,12 +145,23 @@ spec:
                         // :latest. Use 'jemalloc-prof' for a profiling canary; never drop
                         // jemalloc entirely — the bare glibc set re-leaks.
                         def profiling = params.HC_FEATURES.contains('jemalloc-prof')
-                        env.EDGE_IMAGE = profiling ? 'elohim-edgenode-prof' : 'elohim-edgenode'
-                        echo "  profiling build: ${profiling}  ->  image: ${env.EDGE_IMAGE}"
-                        // Rolling named rollback anchor: only for the production (non-prof)
-                        // line — a jemalloc-prof build is a one-off diagnostic canary, not
-                        // something an operator rolls back to by conductor-line name.
-                        env.HC_TAG = 'hc-' + params.HC_BRANCH.replaceAll('/', '-')
+                        // transport-iroh builds are the Wave-2 flip artifact (design doc
+                        // 2026-08-05-wave2-relay-sovereignty-design.md D9): SAME conductor
+                        // commit, iroh transport compiled INSTEAD of tx5 (kitsune2 cfg-gates
+                        // tx5-wins-when-compiled, so this cannot be one dual-feature image).
+                        // Like jemalloc-prof they push ISOLATED image names — an iroh build
+                        // must NEVER clobber elohim-edgenode:latest (the tx5 fleet tag and
+                        // its rollback contract).
+                        def irohTransport = params.HC_FEATURES.contains('transport-iroh')
+                        if (profiling && irohTransport) {
+                            error('jemalloc-prof + transport-iroh in one build is unsupported — run two builds')
+                        }
+                        env.EDGE_IMAGE = profiling ? 'elohim-edgenode-prof' : (irohTransport ? 'elohim-edgenode-iroh' : 'elohim-edgenode')
+                        echo "  profiling build: ${profiling}  iroh build: ${irohTransport}  ->  image: ${env.EDGE_IMAGE}"
+                        // Rolling named rollback anchor: production (non-prof) lines only —
+                        // tx5 line gets hc-<branch>, iroh line gets hc-<branch>-iroh (both
+                        // stay live in Harbor for one full wave; rollback = tag repoint).
+                        env.HC_TAG = 'hc-' + params.HC_BRANCH.replaceAll('/', '-') + (irohTransport ? '-iroh' : '')
                         def rollbackTags = profiling ? [] : [env.HC_TAG]
                         def result = buildDevspaceImage(
                             imageName: env.EDGE_IMAGE,
@@ -182,8 +193,13 @@ spec:
                         // which a prof run does NOT push). Production (default jemalloc) →
                         // unchanged elohim-storage-zombiefix + defaults (embeds edgenode:latest).
                         def profiling = params.HC_FEATURES.contains('jemalloc-prof')
-                        def storageImage = profiling ? 'elohim-storage-prof' : 'elohim-storage-zombiefix'
-                        def storageArgs = profiling ? [CONDUCTOR_SOURCE: 'harbor.ethosengine.com/ethosengine/elohim-edgenode-prof:latest'] : [:]
+                        def irohTransport = params.HC_FEATURES.contains('transport-iroh')
+                        // iroh variant → isolated storage name embedding the isolated iroh
+                        // conductor: the deployable artifact for the Wave-2 atomic flip
+                        // window (point the STS at elohim-storage-iroh:hc-<branch>-iroh;
+                        // rollback = repoint to elohim-storage-zombiefix:hc-<branch>).
+                        def storageImage = profiling ? 'elohim-storage-prof' : (irohTransport ? 'elohim-storage-iroh' : 'elohim-storage-zombiefix')
+                        def storageArgs = profiling ? [CONDUCTOR_SOURCE: 'harbor.ethosengine.com/ethosengine/elohim-edgenode-prof:latest'] : (irohTransport ? [CONDUCTOR_SOURCE: 'harbor.ethosengine.com/ethosengine/elohim-edgenode-iroh:latest'] : [:])
                         // This image embeds the conductor built above (CONDUCTOR_SOURCE_IMAGE
                         // COPY), so it carries the same rollback-anchor treatment — production
                         // line only, matching the edgenode stage above.
