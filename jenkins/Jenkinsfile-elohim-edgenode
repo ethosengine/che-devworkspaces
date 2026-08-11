@@ -185,12 +185,21 @@ spec:
                         // resolves via --build-arg CONDUCTOR_SOURCE_IMAGE. That is what replaces the
                         // hand-edited sha256 digest pin: the committed submodule SHA IS the pin, so
                         // a conductor bump reaches the fleet without anyone editing a Dockerfile.
+                        // The tag names BOTH forks that determine the binary: the conductor
+                        // source and the tx5 commit its [patch.crates-io] routes to ../tx5.
+                        // A conductor-SHA-only tag would collide — bump tx5 alone and the same
+                        // tag would be republished over a DIFFERENT binary, silently breaking
+                        // the reproducibility this pin exists to give. (elohim/kitsune2 is NOT
+                        // in the tag: its sibling-clone path patches are commented out in the
+                        // fork's Cargo.toml, so that submodule is reference-only and cannot
+                        // change the binary.)
                         // The iroh line carries a suffix so an iroh build can NEVER satisfy the
                         // tx5-production pin the edge pipeline asks for (same isolation contract as
                         // the image names above). Profiling builds publish NO pin tag at all —
                         // a diagnostic canary is not a deploy source, matching rollbackTags below.
-                        env.CONDUCTOR_PIN_TAG = (params.HC_REF && !profiling)
-                            ? 'conductor-' + params.HC_REF.take(12) + (irohTransport ? '-iroh' : '')
+                        env.CONDUCTOR_PIN_TAG = (params.HC_REF && params.TX5_REF && !profiling)
+                            ? 'conductor-' + params.HC_REF.take(12) + '-' + params.TX5_REF.take(12) +
+                              (irohTransport ? '-iroh' : '')
                             : ''
                         if (env.CONDUCTOR_PIN_TAG) {
                             echo "  source-derived pin tag: ${env.CONDUCTOR_PIN_TAG}"
