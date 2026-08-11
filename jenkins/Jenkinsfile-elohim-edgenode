@@ -193,13 +193,18 @@ spec:
                         // in the tag: its sibling-clone path patches are commented out in the
                         // fork's Cargo.toml, so that submodule is reference-only and cannot
                         // change the binary.)
-                        // The iroh line carries a suffix so an iroh build can NEVER satisfy the
-                        // tx5-production pin the edge pipeline asks for (same isolation contract as
-                        // the image names above). Profiling builds publish NO pin tag at all —
-                        // a diagnostic canary is not a deploy source, matching rollbackTags below.
-                        env.CONDUCTOR_PIN_TAG = (params.HC_REF && params.TX5_REF && !profiling)
-                            ? 'conductor-' + params.HC_REF.take(12) + '-' + params.TX5_REF.take(12) +
-                              (irohTransport ? '-iroh' : '')
+                        // The iroh line OMITS the tx5 component and carries an -iroh suffix:
+                        // transport-iroh compiles INSTEAD of tx5, so a tx5 SHA in that tag would
+                        // assert provenance the binary does not have. The differing shape also
+                        // means an iroh build can never satisfy the tx5-production pin the edge
+                        // pipeline asks for (same isolation contract as the image names above).
+                        // Profiling builds publish NO pin tag at all — a diagnostic canary is not
+                        // a deploy source, matching rollbackTags below.
+                        def haveRefs = params.HC_REF && (params.TX5_REF || irohTransport)
+                        env.CONDUCTOR_PIN_TAG = (haveRefs && !profiling)
+                            ? (irohTransport
+                                ? 'conductor-' + params.HC_REF.take(12) + '-iroh'
+                                : 'conductor-' + params.HC_REF.take(12) + '-' + params.TX5_REF.take(12))
                             : ''
                         if (env.CONDUCTOR_PIN_TAG) {
                             echo "  source-derived pin tag: ${env.CONDUCTOR_PIN_TAG}"
