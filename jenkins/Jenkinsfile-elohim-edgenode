@@ -6,6 +6,17 @@
 // for edgenode builds — separate from the elohim monorepo's edge DEPLOY pipeline
 // (which is near the Jenkinsfile CPS size limit and also builds doorway+storage).
 //
+// ORCHESTRATED, NOT ONLY MANUAL. The elohim monorepo declares this job as the
+// `elohim-conductor` pipeline (elohim/conductor-image/build-manifest.json) and
+// dispatches it when a commit bumps the elohim/holochain-conductor, elohim/tx5,
+// or elohim/kitsune2 submodule pointer — passing those pointers as HC_REF /
+// TX5_REF. The build then publishes `conductor-<sha12>`, which the monorepo edge
+// pipeline resolves from the same pointer and bakes into elohim-storage. That
+// chain is what makes a conductor bump reach the fleet with no hand-edited
+// digest and no manual run of this job. Parameters below are also settable from
+// a commit message via the [conductor:…] tag. Details:
+// elohim/conductor-image/README.md in the monorepo.
+//
 // Currently carries the tx5/go-pion zombie-PeerConnection leak fix (tx5 #194/#199)
 // + holochain #5719. Change HC_BRANCH / TX5_BRANCH to build a different patch set.
 //
@@ -108,6 +119,10 @@ spec:
                description: 'ethosengine/holochain branch (conductor source + tx5 [patch] + #5719)')
         string(name: 'TX5_BRANCH', defaultValue: 'elohim-0.8.1-zombie-fix',
                description: 'ethosengine/tx5 branch (zombie-fix #194/#199)')
+        string(name: 'HC_REF', defaultValue: '',
+               description: 'EXACT holochain-fork commit to build (wins over HC_BRANCH). Set automatically by the elohim orchestrator to the SHA the monorepo\'s elohim/holochain-conductor submodule pointer records, which makes the image identity derive from committed source. When set, the build also publishes the source-derived pin tag `conductor-<sha12>` — the tag the monorepo edge pipeline bakes into elohim-storage. Leave empty for a branch-tip build (no pin tag published).')
+        string(name: 'TX5_REF', defaultValue: '',
+               description: 'EXACT tx5-fork commit to build (wins over TX5_BRANCH). Same submodule-pointer provenance as HC_REF; the conductor Cargo [patch] routes the tx5 0.8.1 family at this commit.')
         string(name: 'HC_FEATURES', defaultValue: 'sqlite-encrypted,wasmer_sys,transport-tx5-backend-go-pion,jemalloc',
                description: 'Conductor cargo --features. DEFAULT is jemalloc (the PRODUCTION allocator cure: jemalloc as global allocator with C-side malloc interposition, profiling OFF) → pushes the fleet tag elohim-edgenode:latest (which the monorepo storage embeds). Do NOT drop jemalloc — "sqlite-encrypted,wasmer_sys,transport-tx5-backend-go-pion" alone is the glibc build that LEAKED. To build the debug heap-PROFILING canary instead, set this to "sqlite-encrypted,wasmer_sys,transport-tx5-backend-go-pion,jemalloc-prof" → pushes ISOLATED images elohim-edgenode-prof / elohim-storage-prof, never touching :latest. To build the Wave-2 IROH-TRANSPORT flip artifact, set "sqlite-encrypted,wasmer_sys,transport-iroh,jemalloc" → pushes ISOLATED elohim-edgenode-iroh / elohim-storage-iroh with rollback anchor hc-<branch>-iroh, also never touching :latest (deploy is a per-env STS image repoint — design doc 2026-08-05-wave2-relay-sovereignty-design.md D9/§4.1; requires the live self-hosted relay pair first).')
         booleanParam(name: 'BUILD_STORAGE_CANARY', defaultValue: false,
@@ -129,6 +144,8 @@ spec:
                         echo "  holochain fork branch: ${params.HC_BRANCH}"
                         echo "  tx5 fork branch:       ${params.TX5_BRANCH}"
                         echo "  conductor features:    ${params.HC_FEATURES}"
+                        echo "  holochain fork ref:    ${params.HC_REF ?: '(branch tip)'}"
+                        echo "  tx5 fork ref:          ${params.TX5_REF ?: '(branch tip)'}"
                     }
                 }
             }
@@ -162,12 +179,34 @@ spec:
                         // tx5 line gets hc-<branch>, iroh line gets hc-<branch>-iroh (both
                         // stay live in Harbor for one full wave; rollback = tag repoint).
                         env.HC_TAG = 'hc-' + params.HC_BRANCH.replaceAll('/', '-') + (irohTransport ? '-iroh' : '')
+                        // SOURCE-DERIVED PIN TAG. When the orchestrator supplies HC_REF (the SHA
+                        // the monorepo's elohim/holochain-conductor submodule pointer records), the
+                        // image also gets `conductor-<sha12>` — the tag elohim-storage's Dockerfile
+                        // resolves via --build-arg CONDUCTOR_SOURCE_IMAGE. That is what replaces the
+                        // hand-edited sha256 digest pin: the committed submodule SHA IS the pin, so
+                        // a conductor bump reaches the fleet without anyone editing a Dockerfile.
+                        // The iroh line carries a suffix so an iroh build can NEVER satisfy the
+                        // tx5-production pin the edge pipeline asks for (same isolation contract as
+                        // the image names above). Profiling builds publish NO pin tag at all —
+                        // a diagnostic canary is not a deploy source, matching rollbackTags below.
+                        env.CONDUCTOR_PIN_TAG = (params.HC_REF && !profiling)
+                            ? 'conductor-' + params.HC_REF.take(12) + (irohTransport ? '-iroh' : '')
+                            : ''
+                        if (env.CONDUCTOR_PIN_TAG) {
+                            echo "  source-derived pin tag: ${env.CONDUCTOR_PIN_TAG}"
+                        } else if (profiling) {
+                            echo "  profiling build → no pin tag (diagnostic canary, not a deploy source)"
+                        } else {
+                            echo "  no HC_REF → no pin tag; the monorepo edge build will NOT pick this up"
+                        }
                         def rollbackTags = profiling ? [] : [env.HC_TAG]
+                        if (env.CONDUCTOR_PIN_TAG) rollbackTags.add(env.CONDUCTOR_PIN_TAG)
                         def result = buildDevspaceImage(
                             imageName: env.EDGE_IMAGE,
                             dockerfile: 'containers/elohim-edgenode',
                             registry: 'harbor.ethosengine.com/ethosengine',
-                            buildArgs: [HC_BRANCH: params.HC_BRANCH, TX5_BRANCH: params.TX5_BRANCH, HC_FEATURES: params.HC_FEATURES],
+                            buildArgs: [HC_BRANCH: params.HC_BRANCH, TX5_BRANCH: params.TX5_BRANCH, HC_FEATURES: params.HC_FEATURES,
+                                        HC_REF: params.HC_REF, TX5_REF: params.TX5_REF],
                             skipBaseImageCheck: true,   // trigger is the fork commits, not the holo-host base
                             forceBuild: true,
                             skipPush: params.SKIP_PUSH,
@@ -204,6 +243,7 @@ spec:
                         // COPY), so it carries the same rollback-anchor treatment — production
                         // line only, matching the edgenode stage above.
                         def rollbackTags = profiling ? [] : [env.HC_TAG]
+                        if (env.CONDUCTOR_PIN_TAG) rollbackTags.add(env.CONDUCTOR_PIN_TAG)
                         buildDevspaceImage(
                             imageName: storageImage,
                             dockerfile: 'containers/elohim-storage-zombiefix',
@@ -228,7 +268,11 @@ spec:
                 if (env.IMAGE_TAG_GIT) {
                     def rollbackTag = params.HC_FEATURES.contains('jemalloc-prof') ? null : env.HC_TAG
                     def tagList = rollbackTag ? "latest,${env.IMAGE_TAG_DATED},${env.IMAGE_TAG_GIT},${rollbackTag}" : "latest,${env.IMAGE_TAG_DATED},${env.IMAGE_TAG_GIT}"
+                    if (env.CONDUCTOR_PIN_TAG) tagList += ",${env.CONDUCTOR_PIN_TAG}"
                     echo "Pushed harbor.ethosengine.com/ethosengine/${env.EDGE_IMAGE ?: 'elohim-edgenode'}:{${tagList}}"
+                    if (env.CONDUCTOR_PIN_TAG) {
+                        echo "Pin tag ${env.CONDUCTOR_PIN_TAG} is what the monorepo edge build resolves for CONDUCTOR_SOURCE_IMAGE — the fleet picks this conductor up on the next elohim-edge run with no Dockerfile edit."
+                    }
                     echo "Canary one non-genesis leecher at a specific tag; watch smaps_anon{class=other} flatten + stay in-mesh; roll, genesis pair last."
                 }
             }

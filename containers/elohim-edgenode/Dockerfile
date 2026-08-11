@@ -33,6 +33,15 @@ ARG HC_FORK=https://github.com/ethosengine/holochain.git
 ARG HC_BRANCH=elohim-0.6.3
 ARG TX5_FORK=https://github.com/ethosengine/tx5.git
 ARG TX5_BRANCH=elohim-0.8.1-zombie-fix
+# HC_REF / TX5_REF — build an EXACT commit instead of a branch tip. The elohim
+# monorepo passes the SHAs its `elohim/holochain-conductor` and `elohim/tx5`
+# submodule pointers record, so the image identity is derived from committed
+# source rather than "whatever the branch tip was at build time". Empty (the
+# default) falls back to the branch clone for standalone/manual builds.
+# This also closes a cache hole: a branch-tip clone layer can be reused across
+# two different tips, whereas a REF change always invalidates it.
+ARG HC_REF=
+ARG TX5_REF=
 # Best-effort feature set — VERIFY against holo-host's go-pion-custom release recipe.
 # At 0.6.3 the tx5 feature was renamed backend-go-pion -> transport-tx5-backend-go-pion,
 # and `jemalloc` is our fork's production allocator feature.
@@ -40,7 +49,7 @@ ARG HC_FEATURES=sqlite-encrypted,wasmer_sys,transport-tx5-backend-go-pion,jemall
 
 # ── builder: compile the patched glibc holochain binary ──────────────────────
 FROM rust:1.91-bookworm AS build
-ARG HC_FORK HC_BRANCH TX5_FORK TX5_BRANCH HC_FEATURES
+ARG HC_FORK HC_BRANCH TX5_FORK TX5_BRANCH HC_FEATURES HC_REF TX5_REF
 # Go 1.24 + a C toolchain for the tx5-go-pion-sys CGo build (vendored pion/webrtc v4.1.3)
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential cmake perl pkg-config libssl-dev ca-certificates curl git \
@@ -51,9 +60,14 @@ ENV PATH=/usr/local/go/bin:$PATH \
     RUSTFLAGS="" \
     GOFLAGS=-mod=mod
 WORKDIR /src
-# clone side-by-side so the conductor's [patch] `../tx5/crates/*` resolves to our fork
-RUN git clone --depth 1 -b "${TX5_BRANCH}" "${TX5_FORK}" tx5 \
- && git clone --depth 1 -b "${HC_BRANCH}" "${HC_FORK}" holochain-conductor
+# clone side-by-side so the conductor's [patch] `../tx5/crates/*` resolves to our fork.
+# A *_REF (exact commit) wins over the branch when supplied — fetched shallow by SHA,
+# which GitHub serves (uploadpack.allowAnySHA1InWant). The fetched commit is echoed so
+# the build log records exactly which source produced the binary.
+COPY clone-fork.sh /usr/local/bin/clone-fork.sh
+RUN chmod +x /usr/local/bin/clone-fork.sh \
+ && clone-fork.sh "${TX5_FORK}" "${TX5_BRANCH}" "${TX5_REF}" tx5 \
+ && clone-fork.sh "${HC_FORK}" "${HC_BRANCH}" "${HC_REF}" holochain-conductor
 WORKDIR /src/holochain-conductor
 # NOTE: no --locked (the [patch] updates the lockfile). go-pion backend ONLY (datachannel
 # backend pulls datachannel-sys → a C++/openssl/bindgen build we don't want and don't ship).
