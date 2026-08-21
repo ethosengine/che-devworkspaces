@@ -48,6 +48,31 @@ RUN curl -fsSL -o /tmp/node.tar.gz \
     test "v${NODE_VERSION}" = "$(node --version)" && \
     echo "node $(node --version) / npm $(npm --version)"
 
+# Install mongod (MongoDB Community 8.0) from the official pinned tarball.
+#
+# Purpose: the local multi-peer mesh (elohim: app/elohim-app/scripts/hc-mesh.sh)
+# runs a loopback mongod so BOTH local doorways boot archive-backed — the
+# Mongo-side projection archive (app_file_cache / warm-shell ShellArchive /
+# DoorwayResolver store) is what lets the boot-order self-heal family be proven
+# at the desk instead of only in the fleet. Without a mongod the doorway
+# constructs an inert warm-shell store, which is precisely the production shape
+# elohim 18a65fd0d found un-wired for that cure's entire life (2026-08-21).
+#
+# rhel93 build on a UBI10 base: verified 2026-08-21 on the live image lineage
+# (glibc 2.39, OpenSSL 3.5) — `mongod --fork` reaches "Waiting for connections".
+# MongoDB publishes no UBI10/RHEL10 artifact yet; bump to one when it exists.
+# Only the server binary is installed (no mongos/tools): ~150MB, bin only.
+# Bumping: update BOTH args — sha256 from the tarball itself
+# (`curl -fsSL <url> | sha256sum`); MongoDB publishes per-file .sha256 alongside.
+ARG MONGOD_VERSION=8.0.12
+ARG MONGOD_SHA256=d14e31970b7b32e010564122086c2c866cbd03e289625855d6e97103f5135fe9
+RUN curl -fsSL -o /tmp/mongodb.tgz \
+        "https://fastdl.mongodb.org/linux/mongodb-linux-x86_64-rhel93-${MONGOD_VERSION}.tgz" && \
+    echo "${MONGOD_SHA256}  /tmp/mongodb.tgz" | sha256sum -c - && \
+    tar -xzf /tmp/mongodb.tgz --wildcards --strip-components=2 -C /usr/local/bin '*/bin/mongod' && \
+    rm -f /tmp/mongodb.tgz && \
+    mongod --version | head -1
+
 # Install Claude Code globally via npm (installs to /usr/local/bin/claude)
 # Native installer puts binary in ~/.local/bin which gets wiped by PVC mounts in Che
 RUN npm install -g @anthropic-ai/claude-code
