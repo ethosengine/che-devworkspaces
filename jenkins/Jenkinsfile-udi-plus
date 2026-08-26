@@ -102,7 +102,7 @@ spec:
                                     nerdctl -n k8s.io run --rm ${img}:latest bash -c '
                                         echo "=== PREVIOUS IMAGE VERSIONS ==="
                                         echo "Claude: \$(claude --version 2>/dev/null || echo N/A)"
-                                        echo "Gemini: \$(gemini --version 2>/dev/null || echo N/A)"
+                                        echo "Antigravity: \$(agy --version 2>/dev/null || echo N/A)"
                                         echo "Node: \$(node --version 2>/dev/null || echo N/A)"
                                         echo "npm: \$(npm --version 2>/dev/null || echo N/A)"
                                         echo "Java: \$(java -version 2>&1 | head -1)"
@@ -213,7 +213,7 @@ New versions will be reported after build completion.
                             script: """
                                 nerdctl -n k8s.io run --rm ${env.IMAGE_NAME} bash -c '
                                     echo "Claude: \$(claude --version 2>/dev/null || echo N/A)"
-                                    echo "Gemini: \$(gemini --version 2>/dev/null || echo N/A)"
+                                    echo "Antigravity: \$(agy --version 2>/dev/null || echo N/A)"
                                     echo "Node: \$(node --version 2>/dev/null || echo N/A)"
                                     echo "npm: \$(npm --version 2>/dev/null || echo N/A)"
                                     echo "Java: \$(java -version 2>&1 | head -1)"

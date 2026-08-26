@@ -82,18 +82,13 @@ RUN npm install -g @anthropic-ai/claude-code
 # drops the binary in ~/.local/bin, which PVC mounts wipe in Che. npm-global survives.
 RUN npm install -g @openai/codex
 
-# Install Google Gemini CLI globally via npm (installs to /usr/local/bin/gemini)
-# Same rationale as Claude Code and Codex above: an npm-global prefix under
-# /usr/local survives the PVC mounts that shadow ~/.local/bin in Che.
-#
-# Unlike Codex (CODEX_HOME) there is NO env override for Gemini's state dir:
-# Storage.getGlobalGeminiDir() is hardcoded to `homedir()/.gemini` (verified
-# against 0.55.1's bundle — GEMINI_DIR is a constant, not an env lookup). So
-# sign-in persistence is done the Claude way, with a ~/.gemini -> /projects
-# symlink in the consuming devfile's postStart, not from this image.
-#
-# Node floor is >=20; this image pins 24.x above, so the engines gate is met.
-RUN npm install -g @google/gemini-cli
+# Install Google Antigravity CLI as a system-wide native binary.
+# Its official installer defaults to ~/.local/bin, which is shadowed by Che's
+# home mounts. --dir keeps the binary in the immutable image while the devfile
+# persists Antigravity's runtime state separately on /projects.
+# The installer verifies the release payload against Google's SHA-512 manifest.
+RUN curl -fsSL https://antigravity.google/cli/install.sh | \
+    bash -s -- --dir /usr/local/bin
 
 # Install Java 21 via dnf
 RUN dnf install -y java-21-openjdk-headless java-21-openjdk-devel && \
@@ -211,5 +206,5 @@ ENV PATH=/usr/lib/jvm/java-21-openjdk/bin:$PATH
 # Verify installation
 RUN claude --version
 RUN codex --version
-RUN gemini --version
+RUN agy --version
 RUN java -version
