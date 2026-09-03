@@ -154,8 +154,7 @@ USER root
 # ============================================================================
 # Holochain binaries (pre-built, requires UBI10 for GLIBCXX_3.4.30)
 # ============================================================================
-ARG HOLOCHAIN_VERSION=0.6.0
-ARG LAIR_VERSION=0.5.3
+ARG HOLOCHAIN_VERSION=0.7.0
 RUN mkdir -p /opt/holochain/bin && \
     curl -sL -o /opt/holochain/bin/holochain \
       "https://nexus.ethosengine.com/repository/github-releases-proxy/holochain/holochain/releases/download/holochain-${HOLOCHAIN_VERSION}/holochain-x86_64-unknown-linux-gnu" && \
@@ -163,8 +162,6 @@ RUN mkdir -p /opt/holochain/bin && \
       "https://nexus.ethosengine.com/repository/github-releases-proxy/holochain/holochain/releases/download/holochain-${HOLOCHAIN_VERSION}/hc-x86_64-unknown-linux-gnu" && \
     curl -sL -o /opt/holochain/bin/hcterm \
       "https://nexus.ethosengine.com/repository/github-releases-proxy/holochain/holochain/releases/download/holochain-${HOLOCHAIN_VERSION}/hcterm-x86_64-unknown-linux-gnu" && \
-    curl -sL -o /opt/holochain/bin/lair-keystore \
-      "https://nexus.ethosengine.com/repository/github-releases-proxy/holochain/lair/releases/download/lair_keystore-v${LAIR_VERSION}/lair-keystore-v${LAIR_VERSION}-x86_64-unknown-linux-gnu" && \
     chmod +x /opt/holochain/bin/* && \
     chown -R user:root /opt/holochain && \
     chmod -R g=u /opt/holochain
@@ -202,7 +199,6 @@ RUN echo '#!/bin/bash' > /home/user/bin/rust-status && \
     echo 'echo "=== Holochain Binaries ==="' >> /home/user/bin/rust-status && \
     echo 'holochain --version 2>/dev/null || echo "holochain: not found"' >> /home/user/bin/rust-status && \
     echo 'hc --version 2>/dev/null || echo "hc: not found"' >> /home/user/bin/rust-status && \
-    echo 'lair-keystore --version 2>/dev/null || echo "lair-keystore: not found"' >> /home/user/bin/rust-status && \
     chmod +x /home/user/bin/rust-status
 
 # Create holo-help helper command
@@ -211,7 +207,6 @@ RUN echo '#!/bin/bash' > /home/user/bin/holo-help && \
     echo 'echo ""' >> /home/user/bin/holo-help && \
     echo 'echo "  holochain --version    # Conductor version"' >> /home/user/bin/holo-help && \
     echo 'echo "  hc --version           # CLI version"' >> /home/user/bin/holo-help && \
-    echo 'echo "  lair-keystore --help   # Key management"' >> /home/user/bin/holo-help && \
     echo 'echo ""' >> /home/user/bin/holo-help && \
     echo 'echo "Scaffolding (P2P Shipyard / DarkSoil):"' >> /home/user/bin/holo-help && \
     echo 'echo "  hc scaffold            # Interactive scaffolding"' >> /home/user/bin/holo-help && \

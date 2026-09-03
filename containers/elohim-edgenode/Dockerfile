@@ -1,83 +1,57 @@
 # syntax=docker/dockerfile:1
 # ─────────────────────────────────────────────────────────────────────────────
-# Custom edgenode carrying the tx5/go-pion zombie-PeerConnection leak fix.
+# Custom edgenode carrying the Elohim Holochain 0.7 conductor fork.
 #
-# WHAT THIS FIXES (RCA: .claude/data/conductor-leak-rca-tx5-gopion-backpressure-2026-06-17.md):
-#   The conductor's off-heap OOM = dead-peer "zombie" PeerConnections never freed,
-#   because tx5 0.8.1's go_pion.rs ignored PeerConnectionState changes (Evt::State(_)=>()).
-#   Fixed by tx5 #194 + #199 (verified: teardown tests PASS with the fix / TIME OUT without).
-#   Also carries holochain #5719 (the receipt-storm amplifier brake).
+# HISTORY: the 0.6 image carried the tx5/go-pion zombie-PeerConnection leak fix.
+#   Holochain 0.7 removes that transport; iroh is now the only transport.
 #
 # HOW: holo-host's base downloads a PREBUILT holochain to /bin/holochain. We build OUR
-#   patched binary (a6d4e805 + tx5 [patch] #194/#199 + #5719) and swap it in. Pure binary
-#   swap — no need to replicate holo-host's whole image build.
+#   patched conductor and swap it in. Pure binary swap — no need to replicate holo-host's
+#   whole image build.
 #
-#   The conductor fork's Cargo.toml [patch.crates-io] routes the tx5 0.8.1 family to ../tx5
-#   (our fork). The two forks are cloned side-by-side below so that relative path resolves.
+# HC_FEATURES is the Holochain 0.7 production set. Canary the resulting conductor on
+# one non-genesis peer and confirm gossip/DHT health before a genesis-pair or fleet roll.
 #
-# ⚠ TWO THINGS TO VERIFY against holo-host's exact "go-pion-custom" build before fleet use:
-#   1. HC_FEATURES — the production feature set (esp. wasmer + any unstable-* flags). The
-#      default below is a best-effort starting point derived from the Makefile; holo-host's
-#      release recipe is authoritative. A wrong feature set builds a subtly-different binary.
-#   2. kitsune2 wire-compat — our binary links kitsune2 0.3.2 (a6d4e805); the live mesh runs
-#      kitsune2 0.3.0-dev.3 (holo-host's chore-downgrade branch). Both 0.3.x → expected
-#      wire-compatible, but CANARY FIRST (one non-genesis leecher) and confirm gossip/DHT
-#      before any genesis-pair or fleet roll (per HANDOFF-2026-06-17-upstream-tx5-transport-pin §4).
-#
-# BUILD (heavy — CI/build-host: ~20-30 GB target, ~30 min; needs network for crates + Go deps):
+# BUILD (heavy — CI/build-host: ~20-30 GB target, ~30 min; needs network for crates):
 #   docker build -f elohim/holochain/edgenode/Dockerfile.zombie-fix \
 #     -t <registry>/elohim-edgenode:zombie-fix elohim/holochain/edgenode
 # ─────────────────────────────────────────────────────────────────────────────
 
 ARG HC_FORK=https://github.com/ethosengine/holochain.git
-ARG HC_BRANCH=elohim-0.6.3
-ARG TX5_FORK=https://github.com/ethosengine/tx5.git
-ARG TX5_BRANCH=elohim-0.8.1-zombie-fix
-# HC_REF / TX5_REF — build an EXACT commit instead of a branch tip. The elohim
-# monorepo passes the SHAs its `elohim/holochain-conductor` and `elohim/tx5`
-# submodule pointers record, so the image identity is derived from committed
-# source rather than "whatever the branch tip was at build time". Empty (the
-# default) falls back to the branch clone for standalone/manual builds.
+ARG HC_BRANCH=elohim-0.7
+# HC_REF builds an EXACT commit instead of a branch tip. The elohim monorepo passes
+# the SHA its `elohim/holochain-conductor` submodule pointer records, so the image
+# identity is derived from committed source rather than "whatever the branch tip was
+# at build time". Empty (the default) falls back to the branch clone for manual builds.
 # This also closes a cache hole: a branch-tip clone layer can be reused across
 # two different tips, whereas a REF change always invalidates it.
 ARG HC_REF=
-ARG TX5_REF=
-# Best-effort feature set — VERIFY against holo-host's go-pion-custom release recipe.
-# At 0.6.3 the tx5 feature was renamed backend-go-pion -> transport-tx5-backend-go-pion,
-# and `jemalloc` is our fork's production allocator feature.
-ARG HC_FEATURES=sqlite-encrypted,wasmer_sys,transport-tx5-backend-go-pion,jemalloc
+# `jemalloc` remains our fork's production allocator cure; `schema` is omitted.
+ARG HC_FEATURES=encryption,wasmer-sys-cranelift,jemalloc
 
 # ── builder: compile the patched glibc holochain binary ──────────────────────
 FROM rust:1.91-bookworm AS build
-ARG HC_FORK HC_BRANCH TX5_FORK TX5_BRANCH HC_FEATURES HC_REF TX5_REF
-# Go 1.24 + a C toolchain for the tx5-go-pion-sys CGo build (vendored pion/webrtc v4.1.3)
+ARG HC_FORK HC_BRANCH HC_FEATURES HC_REF
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential cmake perl pkg-config libssl-dev ca-certificates curl git \
- && rm -rf /var/lib/apt/lists/* \
- && curl -fsSL https://go.dev/dl/go1.24.4.linux-amd64.tar.gz | tar -C /usr/local -xz
-ENV PATH=/usr/local/go/bin:$PATH \
-    CGO_ENABLED=1 \
-    RUSTFLAGS="" \
-    GOFLAGS=-mod=mod
+ && rm -rf /var/lib/apt/lists/*
+ENV RUSTFLAGS=""
 WORKDIR /src
-# clone side-by-side so the conductor's [patch] `../tx5/crates/*` resolves to our fork.
-# A *_REF (exact commit) wins over the branch when supplied — fetched shallow by SHA,
+# HC_REF (exact commit) wins over the branch when supplied — fetched shallow by SHA,
 # which GitHub serves (uploadpack.allowAnySHA1InWant). The fetched commit is echoed so
 # the build log records exactly which source produced the binary.
 COPY clone-fork.sh /usr/local/bin/clone-fork.sh
 RUN chmod +x /usr/local/bin/clone-fork.sh \
- && clone-fork.sh "${TX5_FORK}" "${TX5_BRANCH}" "${TX5_REF}" tx5 \
  && clone-fork.sh "${HC_FORK}" "${HC_BRANCH}" "${HC_REF}" holochain-conductor
 WORKDIR /src/holochain-conductor
-# NOTE: no --locked (the [patch] updates the lockfile). go-pion backend ONLY (datachannel
-# backend pulls datachannel-sys → a C++/openssl/bindgen build we don't want and don't ship).
-# --no-default-features is REQUIRED at 0.6.3: default = ["transport-iroh"], and the iroh
-# transport flip is a later operator-gated wave — keep tx5 as the sole compiled transport.
+# --no-default-features drops `schema`; encryption, Cranelift, and the allocator cure are
+# selected explicitly. Iroh is the only 0.7 transport and has no cargo feature.
 RUN cargo build --release --bin holochain \
       --no-default-features --features "${HC_FEATURES}"
 
 # ── final: holo-host base, binary swapped ────────────────────────────────────
-FROM ghcr.io/holo-host/edgenode:v0.0.8-alpha31-hc0.6.0-go-pion-custom
+# Byte-identical to the previous runtime base tag, pinned by its amd64 manifest digest.
+FROM ghcr.io/holo-host/edgenode@sha256:f1c010225af0a8f4750ed516ecf2388a2637a66d123df167b82f979032ac8744
 # /bin/holochain is where the base image's prebuilt conductor lives (entrypoint launches it)
 COPY --from=build /src/holochain-conductor/target/release/holochain /bin/holochain
 # the elohim conductor config (same as the stock Dockerfile)
