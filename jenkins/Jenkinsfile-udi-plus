@@ -108,6 +108,7 @@ spec:
                                         echo "Java: \$(java -version 2>&1 | head -1)"
                                         echo "Chrome: \$(google-chrome --version 2>/dev/null || echo N/A)"
                                         echo "Git: \$(git --version 2>/dev/null || echo N/A)"
+                                        echo "gh: \$(gh --version 2>/dev/null | head -1 || echo N/A)"
                                     ' 2>/dev/null || echo 'No previous image available'
                                 """,
                                 returnStdout: true
@@ -219,6 +220,7 @@ New versions will be reported after build completion.
                                     echo "Java: \$(java -version 2>&1 | head -1)"
                                     echo "Chrome: \$(google-chrome --version 2>/dev/null || echo N/A)"
                                     echo "Git: \$(git --version 2>/dev/null || echo N/A)"
+                                    echo "gh: \$(gh --version 2>/dev/null | head -1 || echo N/A)"
                                     if [ -f /opt/mcp/sonarqube-mcp.jar ]; then
                                         echo "SonarQube MCP: installed"
                                     else

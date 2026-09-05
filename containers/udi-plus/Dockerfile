@@ -140,6 +140,21 @@ RUN curl -sL -o /usr/local/bin/hadolint \
     "https://nexus.ethosengine.com/repository/github-releases-proxy/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-Linux-x86_64" && \
     chmod +x /usr/local/bin/hadolint
 
+# Install GitHub CLI (gh) — pinned + checksummed like sccache/node.
+# Bump: TAG=$(curl -fsSL https://api.github.com/repos/cli/cli/releases/latest | grep -m1 tag_name | sed -E 's/.*"v([^"]+)".*/\1/');
+#       curl -fsSL "https://nexus.ethosengine.com/repository/github-releases-proxy/cli/cli/releases/download/v${TAG}/gh_${TAG}_checksums.txt" | grep linux_amd64.tar.gz
+# Lives in the image (not ~/bin) because a workspace restart wipes ~/bin and the
+# git credential path then has nothing that reads GH_TOKEN (2026-09-05).
+ARG GH_VERSION=2.100.0
+ARG GH_SHA256=e4d4bb4498e8d007abe545b6568926793ace1b6447da598294a610018cb164be
+RUN curl -fsSL -o /tmp/gh.tar.gz \
+      "https://nexus.ethosengine.com/repository/github-releases-proxy/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_amd64.tar.gz" \
+ && echo "${GH_SHA256}  /tmp/gh.tar.gz" | sha256sum -c - \
+ && tar -xzf /tmp/gh.tar.gz -C /tmp \
+ && install -m 0755 "/tmp/gh_${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh \
+ && rm -rf /tmp/gh.tar.gz "/tmp/gh_${GH_VERSION}_linux_amd64" \
+ && gh --version
+
 # Install yamllint and check-jsonschema for YAML/devfile validation
 # pip3 binary not available in UBI10 base; use python3 -m pip.
 # pip routed through Nexus PyPI proxy to reduce upstream rate-limit exposure.
