@@ -176,9 +176,9 @@ New versions will be reported after build completion.
                         // if the GAE/Python 2.7 image is ever needed again.
                         if (!result.skipped && !params.SKIP_PUSH) {
                             echo 'udi-plus updated - building downstream images sequentially'
-                            build job: 'devspaces-rust-nix-dev', wait: true
-                            build job: 'devspaces-udi-plus-angular', wait: true
-                            build job: 'devspaces-udi-plus-mem', wait: true
+                            build job: '/devspaces-rust-nix-dev/main', wait: true
+                            build job: '/devspaces-udi-plus-angular/main', wait: true
+                            build job: '/devspaces-udi-plus-mem/main', wait: true
                         }
                     }
                 }

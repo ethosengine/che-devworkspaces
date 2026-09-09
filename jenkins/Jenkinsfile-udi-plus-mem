@@ -112,7 +112,7 @@ spec:
                         // Trigger downstream mem-rust-nix build if mem was updated.
                         if (!result.skipped && !params.SKIP_PUSH) {
                             echo 'udi-plus-mem updated - building downstream udi-plus-mem-rust-nix'
-                            build job: 'devspaces-udi-plus-mem-rust-nix', wait: true
+                            build job: '/devspaces-udi-plus-mem-rust-nix/main', wait: true
                         }
                     }
                 }

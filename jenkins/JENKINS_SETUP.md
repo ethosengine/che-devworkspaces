@@ -154,11 +154,15 @@ This is configured in the downstream-trigger block of `Jenkinsfile-udi-plus`:
 ```groovy
 if (!result.skipped && !params.SKIP_PUSH) {
     echo 'udi-plus updated - building downstream images sequentially'
-    build job: 'devspaces-rust-nix-dev', wait: true
-    build job: 'devspaces-udi-plus-angular', wait: true
-    build job: 'devspaces-udi-plus-mem', wait: true
+    build job: '/devspaces-rust-nix-dev/main', wait: true
+    build job: '/devspaces-udi-plus-angular/main', wait: true
+    build job: '/devspaces-udi-plus-mem/main', wait: true
 }
 ```
+
+The absolute paths name concrete multibranch `main` jobs. With `wait: true`,
+targeting only the parent folder fails with `Waiting for non-job items is not
+supported` instead of scheduling a build.
 
 ### Manual Builds
 
