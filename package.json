@@ -2,6 +2,7 @@
   "name": "che-devworkspaces",
   "private": true,
   "scripts": {
+    "test": "node --test jenkins/tests/*.test.mjs",
     "prepare": "husky",
     "lint": "npm-groovy-lint --path jenkins/",
     "lint:fix": "npm-groovy-lint --path jenkins/ --fix",

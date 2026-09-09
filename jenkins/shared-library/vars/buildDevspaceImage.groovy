@@ -36,6 +36,11 @@
  *     extraTags: []
  *   )
  */
+@NonCPS
+List newestDatedArtifactsFirst(List artifacts) {
+    artifacts.toSorted { a, b -> b.datedTag <=> a.datedTag }
+}
+
 def call(Map config) {
     if (!config.imageName) {
         error("imageName is required")
@@ -301,10 +306,8 @@ EOF
                     }
                 }
 
-                // Sort by dated tag descending (newest first). toSorted
-                // returns a new list and avoids the CPS sandbox warning
-                // that .sort { closure } emits in Jenkins shared libraries.
-                datedArtifacts = datedArtifacts.toSorted { a, b -> b.datedTag <=> a.datedTag }
+                // Native sorting must not call a CPS-transformed comparator.
+                datedArtifacts = newestDatedArtifactsFirst(datedArtifacts)
 
                 if (datedArtifacts.size() > keepCount) {
                     def toDelete = datedArtifacts.drop(keepCount)

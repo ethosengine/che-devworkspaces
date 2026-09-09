@@ -7,56 +7,7 @@ pipeline {
         disableConcurrentBuilds()
     }
 
-    agent {
-        kubernetes {
-            cloud 'kubernetes'
-            yaml '''
-apiVersion: v1
-kind: Pod
-spec:
-  serviceAccount: jenkins-deployer
-  nodeSelector:
-    node-type: edge
-  volumes:
-    - name: containerd-sock
-      hostPath:
-        path: /var/snap/microk8s/common/run/containerd.sock
-        type: Socket
-    - name: buildkit-run
-      emptyDir: {}
-  containers:
-    - name: builder
-      image: harbor.ethosengine.com/ethosengine/ci-builder:latest
-      command:
-        - cat
-      tty: true
-      resources:
-        requests:
-          ephemeral-storage: "2Gi"
-        limits:
-          ephemeral-storage: "4Gi"
-      volumeMounts:
-        - name: containerd-sock
-          mountPath: /run/containerd/containerd.sock
-        - name: buildkit-run
-          mountPath: /run/buildkit
-    - name: buildkitd
-      image: harbor.ethosengine.com/proxy-dockerhub/moby/buildkit:v0.12.5
-      securityContext:
-        privileged: true
-      args:
-        - --addr
-        - unix:///run/buildkit/buildkitd.sock
-        - --oci-worker=true
-        - --containerd-worker=false
-      volumeMounts:
-        - name: containerd-sock
-          mountPath: /run/containerd/containerd.sock
-        - name: buildkit-run
-          mountPath: /run/buildkit
-'''
-        }
-    }
+    agent none
 
     parameters {
         booleanParam(name: 'FORCE_BUILD', defaultValue: false,
@@ -71,181 +22,243 @@ spec:
 
     triggers {
         // Check for base image updates every three days at 02:30 UTC.
-        cron('30 2 */3 * *')
+        cron('TZ=UTC\n30 2 */3 * *')
     }
 
     stages {
-        stage('Checkout') {
-            steps {
-                container('builder') {
-                    script {
-                        checkout scm
-                        sh 'git config --global --add safe.directory $(pwd)'
-                        sh 'git clean -fdx'
-                        sh 'git reset --hard HEAD'
-                        echo "Building from branch: ${env.BRANCH_NAME ?: 'main'}"
-                    }
+        stage('Image') {
+            agent {
+                kubernetes {
+                    cloud 'kubernetes'
+                    yaml '''
+        apiVersion: v1
+        kind: Pod
+        spec:
+          serviceAccount: jenkins-deployer
+          nodeSelector:
+            node-type: edge
+          volumes:
+            - name: containerd-sock
+              hostPath:
+                path: /var/snap/microk8s/common/run/containerd.sock
+                type: Socket
+            - name: buildkit-run
+              emptyDir: {}
+          containers:
+            - name: builder
+              image: harbor.ethosengine.com/ethosengine/ci-builder:latest
+              command:
+                - cat
+              tty: true
+              resources:
+                requests:
+                  ephemeral-storage: "2Gi"
+                limits:
+                  ephemeral-storage: "4Gi"
+              volumeMounts:
+                - name: containerd-sock
+                  mountPath: /run/containerd/containerd.sock
+                - name: buildkit-run
+                  mountPath: /run/buildkit
+            - name: buildkitd
+              image: harbor.ethosengine.com/proxy-dockerhub/moby/buildkit:v0.12.5
+              securityContext:
+                privileged: true
+              args:
+                - --addr
+                - unix:///run/buildkit/buildkitd.sock
+                - --oci-worker=true
+                - --containerd-worker=false
+              volumeMounts:
+                - name: containerd-sock
+                  mountPath: /run/containerd/containerd.sock
+                - name: buildkit-run
+                  mountPath: /run/buildkit
+        '''
                 }
             }
-        }
-
-        stage('Version Report') {
-            steps {
-                container('builder') {
-                    script {
-                        def img = 'harbor.ethosengine.com/devspaces/udi-plus'
-                        echo '═══════════════════════════════════════════'
-                        echo '           VERSION REPORT'
-                        echo '═══════════════════════════════════════════'
-
-                        // Capture versions from current latest image
-                        def previousVersions = ''
-                        try {
-                            sh "nerdctl -n k8s.io pull ${img}:latest 2>/dev/null || true"
-                            previousVersions = sh(
-                                script: """
-                                    nerdctl -n k8s.io run --rm ${img}:latest bash -c '
-                                        echo "=== PREVIOUS IMAGE VERSIONS ==="
-                                        echo "Claude: \$(claude --version 2>/dev/null || echo N/A)"
-                                        echo "Antigravity: \$(agy --version 2>/dev/null || echo N/A)"
-                                        echo "Node: \$(node --version 2>/dev/null || echo N/A)"
-                                        echo "npm: \$(npm --version 2>/dev/null || echo N/A)"
-                                        echo "Java: \$(java -version 2>&1 | head -1)"
-                                        echo "Chrome: \$(google-chrome --version 2>/dev/null || echo N/A)"
-                                        echo "Git: \$(git --version 2>/dev/null || echo N/A)"
-                                        echo "gh: \$(gh --version 2>/dev/null | head -1 || echo N/A)"
-                                    ' 2>/dev/null || echo 'No previous image available'
-                                """,
-                                returnStdout: true
-                            ).trim()
-                        } catch (err) {
-                            previousVersions = 'No previous image available for comparison'
-                        }
-                        echo previousVersions
-
-                        // Save version info to file for build summary
-                        writeFile file: 'version-report.txt', text: """
-Build Date: ${new Date().format('yyyy-MM-dd HH:mm:ss')}
-Build Number: ${env.BUILD_NUMBER}
-Branch: ${env.BRANCH_NAME ?: 'main'}
-
-${previousVersions}
-
-New versions will be reported after build completion.
-"""
-                        archiveArtifacts artifacts: 'version-report.txt',
-                            allowEmptyArchive: true
-                    }
-                }
-            }
-        }
-
-        stage('Build & Push') {
-            steps {
-                container('builder') {
-                    script {
-                        def result = buildDevspaceImage(
-                            imageName: 'udi-plus',
-                            dockerfile: 'containers/udi-plus',
-                            registry: 'harbor.ethosengine.com/devspaces',
-                            // MUST match containers/udi-plus/Dockerfile's FROM.
-                            // This gate skips the whole build when the base
-                            // digest is unchanged, so a wrong value silently
-                            // decouples rebuilds from the real base. It named
-                            // universal-developer-image:ubi9-latest — an image
-                            // this Dockerfile deliberately moved OFF of (see
-                            // its header: base/ubi10 was chosen because
-                            // ubi10-latest only exists for base).
-                            baseImage: 'harbor.ethosengine.com/proxy-quay/devfile/base-developer-image:ubi10-latest',
-                            forceBuild: params.FORCE_BUILD,
-                            skipPush: params.SKIP_PUSH,
-                            skipSecurityScan: params.SKIP_SECURITY_SCAN,
-                            skipSmokeTests: params.SKIP_SMOKE_TESTS
-                        )
-
-                        env.BUILD_RESULT = result.skipped ? 'SKIPPED' : 'SUCCESS'
-                        env.IMAGE_NAME = result.fullImageName
-
-                        // Trigger downstream builds if this was updated.
-                        // devspaces-udi-plus-gae is deliberately NOT here:
-                        // that pipeline is ARCHIVED (manual builds only, its
-                        // own `triggers { }` block is empty). An upstream
-                        // `build job:` overrides that, so the cascade kept
-                        // resurrecting it — and it kept failing (#33 FAILURE,
-                        // 2026-07-12, triggered from here). Build it by hand
-                        // if the GAE/Python 2.7 image is ever needed again.
-                        if (!result.skipped && !params.SKIP_PUSH) {
-                            echo 'udi-plus updated - building downstream images sequentially'
-                            build job: '/devspaces-rust-nix-dev/main', wait: true
-                            build job: '/devspaces-udi-plus-angular/main', wait: true
-                            build job: '/devspaces-udi-plus-mem/main', wait: true
+            stages {
+                stage('Checkout') {
+                    steps {
+                        container('builder') {
+                            script {
+                                checkout scm
+                                sh 'git config --global --add safe.directory $(pwd)'
+                                sh 'git clean -fdx'
+                                sh 'git reset --hard HEAD'
+                                echo "Building from branch: ${env.BRANCH_NAME ?: 'main'}"
+                            }
                         }
                     }
                 }
-            }
-        }
-    }
 
-    post {
-        always {
-            container('builder') {
-                script {
-                    def img = 'harbor.ethosengine.com/devspaces/udi-plus'
-                    if (env.IMAGE_TAG_DATED && env.IMAGE_TAG_GIT) {
-                        sh """
-                            set +e
-                            nerdctl -n k8s.io rmi ${img}:latest 2>/dev/null || true
-                            nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_DATED} 2>/dev/null || true
-                            nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_GIT} 2>/dev/null || true
-                        """
+                stage('Version Report') {
+                    steps {
+                        container('builder') {
+                            script {
+                                def img = 'harbor.ethosengine.com/devspaces/udi-plus'
+                                echo '═══════════════════════════════════════════'
+                                echo '           VERSION REPORT'
+                                echo '═══════════════════════════════════════════'
+
+                                // Capture versions from current latest image
+                                def previousVersions = ''
+                                try {
+                                    sh "nerdctl -n k8s.io pull ${img}:latest 2>/dev/null || true"
+                                    previousVersions = sh(
+                                        script: """
+                                            nerdctl -n k8s.io run --rm ${img}:latest bash -c '
+                                                echo "=== PREVIOUS IMAGE VERSIONS ==="
+                                                echo "Claude: \$(claude --version 2>/dev/null || echo N/A)"
+                                                echo "Antigravity: \$(agy --version 2>/dev/null || echo N/A)"
+                                                echo "Node: \$(node --version 2>/dev/null || echo N/A)"
+                                                echo "npm: \$(npm --version 2>/dev/null || echo N/A)"
+                                                echo "Java: \$(java -version 2>&1 | head -1)"
+                                                echo "Chrome: \$(google-chrome --version 2>/dev/null || echo N/A)"
+                                                echo "Git: \$(git --version 2>/dev/null || echo N/A)"
+                                                echo "gh: \$(gh --version 2>/dev/null | head -1 || echo N/A)"
+                                            ' 2>/dev/null || echo 'No previous image available'
+                                        """,
+                                        returnStdout: true
+                                    ).trim()
+                                } catch (err) {
+                                    previousVersions = 'No previous image available for comparison'
+                                }
+                                echo previousVersions
+
+                                // Save version info to file for build summary
+                                writeFile file: 'version-report.txt', text: """
+        Build Date: ${new Date().format('yyyy-MM-dd HH:mm:ss')}
+        Build Number: ${env.BUILD_NUMBER}
+        Branch: ${env.BRANCH_NAME ?: 'main'}
+
+        ${previousVersions}
+
+        New versions will be reported after build completion.
+        """
+                                archiveArtifacts artifacts: 'version-report.txt',
+                                    allowEmptyArchive: true
+                            }
+                        }
+                    }
+                }
+
+                stage('Build & Push') {
+                    steps {
+                        container('builder') {
+                            script {
+                                def result = buildDevspaceImage(
+                                    imageName: 'udi-plus',
+                                    dockerfile: 'containers/udi-plus',
+                                    registry: 'harbor.ethosengine.com/devspaces',
+                                    // MUST match containers/udi-plus/Dockerfile's FROM.
+                                    // This gate skips the whole build when the base
+                                    // digest is unchanged, so a wrong value silently
+                                    // decouples rebuilds from the real base. It named
+                                    // universal-developer-image:ubi9-latest — an image
+                                    // this Dockerfile deliberately moved OFF of (see
+                                    // its header: base/ubi10 was chosen because
+                                    // ubi10-latest only exists for base).
+                                    baseImage: 'harbor.ethosengine.com/proxy-quay/devfile/base-developer-image:ubi10-latest',
+                                    forceBuild: params.FORCE_BUILD,
+                                    skipPush: params.SKIP_PUSH,
+                                    skipSecurityScan: params.SKIP_SECURITY_SCAN,
+                                    skipSmokeTests: params.SKIP_SMOKE_TESTS
+                                )
+
+                                env.BUILD_RESULT = result.skipped ? 'SKIPPED' : 'SUCCESS'
+                                env.IMAGE_NAME = result.fullImageName
+
+                            }
+                        }
+                    }
+                }
+            }
+
+            post {
+                always {
+                    container('builder') {
+                        script {
+                            def img = 'harbor.ethosengine.com/devspaces/udi-plus'
+                            if (env.IMAGE_TAG_DATED && env.IMAGE_TAG_GIT) {
+                                sh """
+                                    set +e
+                                    nerdctl -n k8s.io rmi ${img}:latest 2>/dev/null || true
+                                    nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_DATED} 2>/dev/null || true
+                                    nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_GIT} 2>/dev/null || true
+                                """
+                            }
+                        }
+                    }
+                }
+                success {
+                    container('builder') {
+                        script {
+                            echo "udi-plus pipeline completed: ${env.BUILD_RESULT}"
+                            if (env.IMAGE_NAME) {
+                                echo "Image: ${env.IMAGE_NAME}"
+                            }
+
+                            // Report new versions from built image
+                            if (env.BUILD_RESULT != 'SKIPPED' && env.IMAGE_NAME) {
+                                echo '═══════════════════════════════════════════'
+                                echo '         NEW IMAGE VERSIONS'
+                                echo '═══════════════════════════════════════════'
+                                def newVersions = sh(
+                                    script: """
+                                        nerdctl -n k8s.io run --rm ${env.IMAGE_NAME} bash -c '
+                                            echo "Claude: \$(claude --version 2>/dev/null || echo N/A)"
+                                            echo "Antigravity: \$(agy --version 2>/dev/null || echo N/A)"
+                                            echo "Node: \$(node --version 2>/dev/null || echo N/A)"
+                                            echo "npm: \$(npm --version 2>/dev/null || echo N/A)"
+                                            echo "Java: \$(java -version 2>&1 | head -1)"
+                                            echo "Chrome: \$(google-chrome --version 2>/dev/null || echo N/A)"
+                                            echo "Git: \$(git --version 2>/dev/null || echo N/A)"
+                                            echo "gh: \$(gh --version 2>/dev/null | head -1 || echo N/A)"
+                                            if [ -f /opt/mcp/sonarqube-mcp.jar ]; then
+                                                echo "SonarQube MCP: installed"
+                                            else
+                                                echo "SonarQube MCP: N/A"
+                                            fi
+                                        ' 2>/dev/null || echo 'Could not retrieve versions'
+                                    """,
+                                    returnStdout: true
+                                ).trim()
+                                echo newVersions
+
+                                // Append new versions to report
+                                def report = readFile('version-report.txt')
+                                writeFile file: 'version-report.txt', text: """${report}
+
+        === NEW IMAGE VERSIONS ===
+        ${newVersions}
+        """
+                                archiveArtifacts artifacts: 'version-report.txt',
+                                    allowEmptyArchive: true
+                            }
+                        }
                     }
                 }
             }
         }
-        success {
-            container('builder') {
+
+        // No agent here: release the parent's BuildKit pod before waiting.
+        stage('Downstream') {
+            steps {
                 script {
-                    echo "udi-plus pipeline completed: ${env.BUILD_RESULT}"
-                    if (env.IMAGE_NAME) {
-                        echo "Image: ${env.IMAGE_NAME}"
-                    }
-
-                    // Report new versions from built image
-                    if (env.BUILD_RESULT != 'SKIPPED' && env.IMAGE_NAME) {
-                        echo '═══════════════════════════════════════════'
-                        echo '         NEW IMAGE VERSIONS'
-                        echo '═══════════════════════════════════════════'
-                        def newVersions = sh(
-                            script: """
-                                nerdctl -n k8s.io run --rm ${env.IMAGE_NAME} bash -c '
-                                    echo "Claude: \$(claude --version 2>/dev/null || echo N/A)"
-                                    echo "Antigravity: \$(agy --version 2>/dev/null || echo N/A)"
-                                    echo "Node: \$(node --version 2>/dev/null || echo N/A)"
-                                    echo "npm: \$(npm --version 2>/dev/null || echo N/A)"
-                                    echo "Java: \$(java -version 2>&1 | head -1)"
-                                    echo "Chrome: \$(google-chrome --version 2>/dev/null || echo N/A)"
-                                    echo "Git: \$(git --version 2>/dev/null || echo N/A)"
-                                    echo "gh: \$(gh --version 2>/dev/null | head -1 || echo N/A)"
-                                    if [ -f /opt/mcp/sonarqube-mcp.jar ]; then
-                                        echo "SonarQube MCP: installed"
-                                    else
-                                        echo "SonarQube MCP: N/A"
-                                    fi
-                                ' 2>/dev/null || echo 'Could not retrieve versions'
-                            """,
-                            returnStdout: true
-                        ).trim()
-                        echo newVersions
-
-                        // Append new versions to report
-                        def report = readFile('version-report.txt')
-                        writeFile file: 'version-report.txt', text: """${report}
-
-=== NEW IMAGE VERSIONS ===
-${newVersions}
-"""
-                        archiveArtifacts artifacts: 'version-report.txt',
-                            allowEmptyArchive: true
+                    // Trigger downstream builds if this was updated.
+                    // devspaces-udi-plus-gae is deliberately NOT here:
+                    // that pipeline is ARCHIVED (manual builds only, its
+                    // own `triggers { }` block is empty). An upstream
+                    // `build job:` overrides that, so the cascade kept
+                    // resurrecting it — and it kept failing (#33 FAILURE,
+                    // 2026-07-12, triggered from here). Build it by hand
+                    // if the GAE/Python 2.7 image is ever needed again.
+                    if (env.BUILD_RESULT == 'SUCCESS' && !params.SKIP_PUSH) {
+                        echo 'udi-plus updated - building downstream images sequentially'
+                        build job: '/devspaces-rust-nix-dev/main', wait: true
+                        build job: '/devspaces-udi-plus-angular/main', wait: true
+                        build job: '/devspaces-udi-plus-mem/main', wait: true
                     }
                 }
             }

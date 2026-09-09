@@ -149,10 +149,20 @@ Each active image job also uses `disableConcurrentBuilds()`, so a manual,
 scheduled, SCM, or upstream invocation that arrives while the same job is
 running waits in Jenkins instead of starting a duplicate build.
 
+The `Image` stage owns the Kubernetes agent and cleanup. `Downstream` runs
+without an agent after that stage ends, so a parent waiting for its children
+does not keep a BuildKit pod alive. Child failures and cancellations propagate.
+
+This is **not yet a global cross-job lock**: separately started chains can
+still overlap. The controller currently lacks the Lockable Resources plugin.
+After installing it, add `options { lock(resource: 'che-image-build') }` to
+each active `Image` stage, before its agent. Never lock the entire pipeline:
+a parent holding the lock while waiting for a child would deadlock.
+
 This is configured in the downstream-trigger block of `Jenkinsfile-udi-plus`:
 
 ```groovy
-if (!result.skipped && !params.SKIP_PUSH) {
+if (env.BUILD_RESULT == 'SUCCESS' && !params.SKIP_PUSH) {
     echo 'udi-plus updated - building downstream images sequentially'
     build job: '/devspaces-rust-nix-dev/main', wait: true
     build job: '/devspaces-udi-plus-angular/main', wait: true
