@@ -2,6 +2,11 @@
 @Library('imagebuilder-shared') _
 
 pipeline {
+    options {
+        // Queue timer/manual collisions instead of building the same image twice.
+        disableConcurrentBuilds()
+    }
+
     agent {
         kubernetes {
             cloud 'kubernetes'
@@ -65,8 +70,8 @@ spec:
     }
 
     triggers {
-        // Check for base image updates daily at 2 AM
-        cron('0 2 * * *')
+        // Check for base image updates every three days at 02:30 UTC.
+        cron('30 2 */3 * *')
     }
 
     stages {
@@ -170,10 +175,10 @@ New versions will be reported after build completion.
                         // 2026-07-12, triggered from here). Build it by hand
                         // if the GAE/Python 2.7 image is ever needed again.
                         if (!result.skipped && !params.SKIP_PUSH) {
-                            echo 'udi-plus updated - triggering downstream builds'
-                            build job: 'devspaces-rust-nix-dev', wait: false
-                            build job: 'devspaces-udi-plus-angular', wait: false
-                            build job: 'devspaces-udi-plus-mem', wait: false
+                            echo 'udi-plus updated - building downstream images sequentially'
+                            build job: 'devspaces-rust-nix-dev', wait: true
+                            build job: 'devspaces-udi-plus-angular', wait: true
+                            build job: 'devspaces-udi-plus-mem', wait: true
                         }
                     }
                 }

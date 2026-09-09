@@ -5,6 +5,7 @@
 pipeline {
     options {
         buildDiscarder(logRotator(numToKeepStr: '3', artifactNumToKeepStr: '3'))
+        disableConcurrentBuilds()
     }
 
     agent {
@@ -120,8 +121,8 @@ spec:
                         // missing item shouldn't turn this build red.
                         if (!result.skipped && !params.SKIP_PUSH) {
                             try {
-                                echo 'ci-builder-nix updated — triggering ethosengine-ci-playwright/main'
-                                build job: '/ethosengine-ci-playwright/main', wait: false
+                                echo 'ci-builder-nix updated — building ethosengine-ci-playwright/main'
+                                build job: '/ethosengine-ci-playwright/main', wait: true
                             } catch (err) {
                                 echo "⚠️  Cascade trigger skipped: ${err.message}"
                             }

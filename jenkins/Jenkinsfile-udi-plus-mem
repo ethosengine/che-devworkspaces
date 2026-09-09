@@ -6,6 +6,10 @@
 @Library('imagebuilder-shared') _
 
 pipeline {
+    options {
+        disableConcurrentBuilds()
+    }
+
     agent {
         kubernetes {
             cloud 'kubernetes'
@@ -107,8 +111,8 @@ spec:
 
                         // Trigger downstream mem-rust-nix build if mem was updated.
                         if (!result.skipped && !params.SKIP_PUSH) {
-                            echo 'udi-plus-mem updated - triggering downstream udi-plus-mem-rust-nix'
-                            build job: 'devspaces-udi-plus-mem-rust-nix', wait: false
+                            echo 'udi-plus-mem updated - building downstream udi-plus-mem-rust-nix'
+                            build job: 'devspaces-udi-plus-mem-rust-nix', wait: true
                         }
                     }
                 }

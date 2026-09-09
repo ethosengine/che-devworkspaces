@@ -4,6 +4,7 @@
 pipeline {
     options {
         buildDiscarder(logRotator(numToKeepStr: '3', artifactNumToKeepStr: '3'))
+        disableConcurrentBuilds()
     }
 
     agent {
@@ -69,10 +70,10 @@ spec:
     }
 
     triggers {
-        // Weekly Sunday 03:00 CST (UTC-6) = 09:00 UTC. Drives the cascade
+        // Rebuild twice monthly at 03:00 UTC. Drives the cascade
         // ci-builder → ci-builder-nix → ci-playwright (each link triggers
         // the next on success, so builds take turns instead of stampeding).
-        cron('0 9 * * 0')
+        cron('0 3 1,15 * *')
     }
 
     stages {
@@ -114,8 +115,8 @@ spec:
                         // missing item shouldn't turn this build red.
                         if (!result.skipped && !params.SKIP_PUSH) {
                             try {
-                                echo 'ci-builder updated — triggering ethosengine-ci-builder-nix/main'
-                                build job: '/ethosengine-ci-builder-nix/main', wait: false
+                                echo 'ci-builder updated — building ethosengine-ci-builder-nix/main'
+                                build job: '/ethosengine-ci-builder-nix/main', wait: true
                             } catch (err) {
                                 echo "⚠️  Cascade trigger skipped: ${err.message}"
                             }

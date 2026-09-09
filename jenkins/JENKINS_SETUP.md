@@ -73,7 +73,7 @@ Navigate to Jenkins → **New Item** for each of the following:
   - **Script Path**: `jenkins/Jenkinsfile-udi-plus`
   - **Branch**: `*/main`
 - **Build Triggers**:
-  - ✅ Poll SCM: `H 2 * * *` (daily at 2 AM to check for base image updates)
+  - Managed by the Jenkinsfile: `30 2 */3 * *` (02:30 UTC every three days)
 
 #### devspaces-rust-nix-dev
 
@@ -140,21 +140,23 @@ Navigate to **Manage Jenkins** → **Credentials** → **System** → **Global c
 ### Automatic Cascade Builds
 
 When `udi-plus` is built successfully:
-- It automatically triggers builds of:
+- It automatically runs these downstream builds in sequence:
   - `devspaces-rust-nix-dev`
   - `devspaces-udi-plus-angular`
-  - `devspaces-udi-plus-gae`
   - `devspaces-udi-plus-mem` (which in turn triggers `devspaces-udi-plus-mem-rust-nix`)
+
+Each active image job also uses `disableConcurrentBuilds()`, so a manual,
+scheduled, SCM, or upstream invocation that arrives while the same job is
+running waits in Jenkins instead of starting a duplicate build.
 
 This is configured in the downstream-trigger block of `Jenkinsfile-udi-plus`:
 
 ```groovy
 if (!result.skipped && !params.SKIP_PUSH) {
-    echo 'udi-plus updated - triggering downstream builds'
-    build job: 'devspaces-rust-nix-dev', wait: false
-    build job: 'devspaces-udi-plus-angular', wait: false
-    build job: 'devspaces-udi-plus-gae', wait: false
-    build job: 'devspaces-udi-plus-mem', wait: false
+    echo 'udi-plus updated - building downstream images sequentially'
+    build job: 'devspaces-rust-nix-dev', wait: true
+    build job: 'devspaces-udi-plus-angular', wait: true
+    build job: 'devspaces-udi-plus-mem', wait: true
 }
 ```
 
@@ -238,9 +240,15 @@ To push to a different registry, update the `registry` parameter in each pipelin
 
 ### Adjust Build Schedule
 
-Modify the `triggers.cron` in `Jenkinsfile-udi-plus` to change when automatic base image checks occur.
+The two scheduled roots run in UTC; descendants are cascade-driven and do not
+have independent timers:
 
-Default: `0 2 * * *` (2 AM daily)
+- `Jenkinsfile-udi-plus`: `30 2 */3 * *` (02:30 UTC)
+- `Jenkinsfile-ci-builder`: `0 3 1,15 * *` (03:00 UTC on the 1st and 15th)
+
+Modify the relevant root's `triggers.cron` to change the cadence. Jenkins cron
+interprets `*/3` in the day-of-month field as every third calendar day within
+each month.
 
 ## MCP Server Plugin Configuration
 

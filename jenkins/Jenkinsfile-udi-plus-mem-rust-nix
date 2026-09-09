@@ -6,6 +6,10 @@
 @Library('imagebuilder-shared') _
 
 pipeline {
+    options {
+        disableConcurrentBuilds()
+    }
+
     agent {
         kubernetes {
             cloud 'kubernetes'
