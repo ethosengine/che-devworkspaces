@@ -18,8 +18,10 @@
 ARG STORAGE_BASE=harbor.ethosengine.com/ethosengine/elohim-storage:dev-latest
 ARG CONDUCTOR_SOURCE=harbor.ethosengine.com/ethosengine/elohim-edgenode:latest
 
+# hadolint ignore=DL3006
 FROM ${CONDUCTOR_SOURCE} AS conductor
 
+# hadolint ignore=DL3006
 FROM ${STORAGE_BASE}
 # embedded-conductor mode spawns /usr/local/bin/holochain (elohim-storage/Dockerfile:229).
 # The patched edgenode image carries the binary at /usr/bin/holochain (usr-merged base).
