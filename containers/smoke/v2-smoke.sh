@@ -14,6 +14,17 @@ set -u
 failed=0
 TIMEOUT=${SMOKE_TIMEOUT:-60}
 
+# The smoke pod starts the image with `cat`, not the Che entrypoint, so two
+# things the entrypoint or a login shell would provide are missing:
+#   - /opt/holochain/bin is on PATH only through ~/.bashrc;
+#   - the running UID may have no /etc/passwd entry (the rust-nix layer ends on
+#     USER 1000), and `import torch` then dies in getpass.getuser(). That is a
+#     container-start detail, not a CPU fault, so give getpass a name to find.
+[ -d /opt/holochain/bin ] && PATH="/opt/holochain/bin:$PATH"
+if ! id -un >/dev/null 2>&1; then
+    export USER=user LOGNAME=user
+fi
+
 report() { # status name detail
     printf '%-5s %s%s\n' "$1" "$2" "${3:+  -- $3}"
 }
@@ -81,6 +92,7 @@ check_tool cargo --version
 check_tool sccache --version
 check_tool holochain --version
 check_tool hc --version
+check_tool hcterm --version
 check_tool chrome --version
 
 echo

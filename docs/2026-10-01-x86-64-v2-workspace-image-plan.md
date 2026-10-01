@@ -1,8 +1,10 @@
 # Workspace images that run on x86-64-v2 hosts (shem)
 
-**Status:** steps 1, 2, 3 and 5 are written but unbuilt (2026-10-01): nothing has been
-built, pushed or run on shem. Step 0 is closed by a verified fact (below). Steps 4 (the smoke
-script is written; running it on shem is not done), 6, 7 and 8 are open. **Date:** 2026-10-01.
+**Status:** steps 1, 2 and 3 are written and build locally (2026-10-01, BuildKit v0.12.5 on
+a v3-capable host): all four layers build and the smoke script passes inside each. Nothing has
+been built by Jenkins, pushed, or run on shem, so step 5's gate is written but unexercised.
+Step 0 is closed by a verified fact (below). Steps 4 (running the smoke on shem), 6, 7 and 8
+are open. **Date:** 2026-10-01.
 
 ## Problem
 

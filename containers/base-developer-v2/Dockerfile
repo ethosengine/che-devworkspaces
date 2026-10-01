@@ -28,15 +28,11 @@
 # EPEL for v2). The Fedora epel-release-latest-10 URL would configure v3-built
 # packages and must not be used here.
 #
-# UNBUILT: written 2026-10-01 without a build daemon. Nothing below has been
-# run. On first build check, in order:
-#   1. BuildKit honours `FROM --platform=linux/amd64/v2` and Harbor's proxy-quay
-#      serves the v2 manifest (a v3-only pull would fail the assertion at the end).
-#   2. Every package in the dnf list resolves (`man-db`, `p7zip*`, `ripgrep`,
-#      `stow` are the likeliest to differ from upstream's UBI names).
-#   3. `find /home/tooling | sort` and `ls /usr/local/bin` match the upstream
-#      image (the dotfile copy and COPY --from steps are reconstructions).
-#   4. KUBEDOCK_VERSION matches `kubedock --version` (the build warns if not).
+# BUILT LOCALLY 2026-10-01 (BuildKit v0.12.5, not yet by Jenkins, not yet run on
+# shem). That build confirmed: Harbor's proxy-quay serves the v2 manifest and
+# BuildKit honours the platform pin (every arch package is x86_64_v2, libc's ISA
+# note needs only v2); the whole dnf list resolves, stow included, from
+# AlmaLinux's own repos; /home/tooling matches the upstream image.
 # The final RUN is a build-host check only. The real proof is the smoke gate on
 # shem (containers/smoke/v2-smoke.sh), because this build host supports v3 and
 # so cannot catch a userland that REQUIRES v3.
@@ -89,18 +85,22 @@ RUN dnf install -y stow || { \
 RUN dnf install -y podman buildah skopeo fuse-overlayfs && \
     dnf clean all
 
-# Static binaries (gh, rg, bat, fd, kubedock), kubedock_setup and man pages live
-# under /usr/local in the upstream image and do not depend on the OS userland.
+# kubedock_setup and anything else upstream ships under /usr/local do not depend
+# on the OS userland. Checked 2026-10-01: the published ubi10 image carries ONLY
+# kubedock_setup there (its gh/rg/bat/fd/kubedock downloads are skipped at build
+# time), so this image has no kubedock binary either, same as upstream.
 # Copying the tree tolerates whatever exact set upstream ships; the assertion at
 # the end rejects any dynamic binary in it that is missing a library here.
 COPY --from=upstream /usr/local/ /usr/local/
 
-# Version pin the upstream image exports; kubedock_setup reads it. Guessed value:
-# the build below warns if the grafted binary disagrees.
-ARG KUBEDOCK_VERSION=0.18.0
+# Version pin the upstream image exports (0.18.2 as of 2026-10-01); kubedock_setup
+# reads it. If upstream starts shipping the binary, the build warns on a mismatch.
+ARG KUBEDOCK_VERSION=0.18.2
 ENV KUBEDOCK_VERSION=${KUBEDOCK_VERSION}
-RUN kubedock --version 2>&1 | grep -q "${KUBEDOCK_VERSION}" || \
-    echo "WARNING: kubedock --version does not mention ${KUBEDOCK_VERSION}; fix ARG KUBEDOCK_VERSION"
+RUN if command -v kubedock >/dev/null 2>&1; then \
+        kubedock version 2>&1 | grep -q "${KUBEDOCK_VERSION}" || \
+        echo "WARNING: kubedock version does not mention ${KUBEDOCK_VERSION}; fix ARG KUBEDOCK_VERSION"; \
+    fi
 
 ENV PATH="/home/user/.local/bin:$PATH"
 ENV KUBECONFIG=/home/user/.kube/config
@@ -116,10 +116,12 @@ RUN touch /etc/subgid /etc/subuid && \
     echo user:10000:65536 > /etc/subgid
 
 # Containers storage: shared read-only image store, fuse-overlayfs mounts.
+# EL10's containers-common ships the file under /usr/share, not /etc.
 RUN sed -i -e 's|^#mount_program|mount_program|g' \
            -e '/additionalimage.*/a "/var/lib/shared",' \
            -e 's|^mountopt[[:space:]]*=.*$|mountopt = "nodev,fsync=0"|g' \
-           /etc/containers/storage.conf && \
+           /usr/share/containers/storage.conf && \
+    grep -q '^mount_program' /usr/share/containers/storage.conf && \
     mkdir -p /var/lib/shared/overlay-images /var/lib/shared/overlay-layers \
              /var/lib/shared/vfs-images /var/lib/shared/vfs-layers && \
     touch /var/lib/shared/overlay-images/images.lock \
