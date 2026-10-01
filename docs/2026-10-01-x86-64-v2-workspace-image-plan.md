@@ -1,6 +1,8 @@
 # Workspace images that run on x86-64-v2 hosts (shem)
 
-**Status:** proposed, not started. **Date:** 2026-10-01.
+**Status:** steps 1, 2, 3 and 5 are written but unbuilt (2026-10-01): nothing has been
+built, pushed or run on shem. Step 0 is closed by a verified fact (below). Steps 4 (the smoke
+script is written; running it on shem is not done), 6, 7 and 8 are open. **Date:** 2026-10-01.
 
 ## Problem
 
@@ -51,8 +53,12 @@ AlmaLinux 10 publishes an x86-64-v2 build of the EL10 userland: same package nam
 `dnf`. Rebuilding the bottom of the chain on it keeps every `dnf install` line and every
 EL-specific workaround in these Dockerfiles unchanged.
 
-This is recollection, not something verified while writing this plan. Step 0 exists to check
-it before any repository change.
+Verified 2026-10-01: the image exists on quay only, not on Docker Hub, as
+`quay.io/almalinuxorg/almalinux:10`, selected with platform `linux/amd64/v2`; through the
+Harbor proxy that is `harbor.ethosengine.com/proxy-quay/almalinuxorg/almalinux:10`. What is
+still unverified is that BuildKit v0.12.5 and the Harbor proxy preserve the v2 manifest, that
+EPEL resolves from v2 repositories, and the rest of step 0's list; the first build and the
+smoke on shem check them.
 
 **Fallback if step 0 fails:** a Debian 13 base (baseline x86-64, GCC 14). It satisfies both
 conditions, but the `dnf` steps become `apt` and the Che base-image conventions have to be
@@ -76,15 +82,22 @@ reproduced by hand. More drift, so it is the second choice.
    `devfile/developer-images` base Dockerfile for ubi10 with its `FROM` swapped to the v2
    userland. This is the one new image to maintain. It carries the Che entrypoint, the
    arbitrary-UID home handling and checode compatibility.
+   *Written, unbuilt.* It reproduces the upstream RUN steps with dnf on AlmaLinux 10 (EPEL
+   from AlmaLinux's own `epel-release`, which is rebuilt for v2) but GRAFTS the
+   architecture-independent files from the upstream image instead of vendoring them:
+   `entrypoint.sh`, the `/home/tooling` stow tree, `podman.wrapper`, and the static tools
+   and `kubedock_setup` under `/usr/local`. The upstream image is a build input only and is
+   never executed. Job: `jenkins/Jenkinsfile-base-developer-v2`.
 
 2. **Parameterise `udi-plus`.** Add `ARG BASE_IMAGE`, defaulting to today's UBI 10 base so the
-   existing image is unaffected. Make no other change to that Dockerfile.
+   existing image is unaffected. Make no other change to that Dockerfile. *Written.*
 
 3. **Build a parallel chain by tag.** Use the same three Dockerfiles with a `v2-latest` tag
    (plus the dated and git tags used today):
    `udi-plus:v2-latest` -> `udi-plus-mem:v2-latest` -> `udi-plus-mem-rust-nix:v2-latest`,
    through the `BASE_TAG` arguments that already exist. Add a `VARIANT` parameter to the three
-   Jenkinsfiles; do not fork them. The default cascade stays on `latest`.
+   Jenkinsfiles; do not fork them. The default cascade stays on `latest`. *Written*: the v2
+   tags are `v2-latest`, `v2-<date>`, `v2-<git>`, so nothing in a v2 run can move `latest`.
 
 4. **Check each pre-built binary on shem.** One smoke script, run in a container on shem:
 
@@ -106,6 +119,8 @@ reproduced by hand. More drift, so it is the second choice.
    `nodeSelector: kubernetes.io/hostname: shem` and the `remote-wan` toleration that runs the
    smoke script against the freshly built v2 tag. Promote the tag to `v2-latest` only if it
    passes. This is the check that would have caught the 2026-10-01 failure.
+   *Written.* The build pushes only the dated and git tags; `smokeAndPromoteDevspaceImage`
+   runs the smoke on shem and then adds `v2-latest` with a Harbor retag.
 
 6. **Workspace-side artefacts.** Before first real use on shem:
    - confirm nothing in the elohim repository sets `target-cpu=native` (cargo config or

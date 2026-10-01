@@ -1,8 +1,13 @@
-// UDI Plus + MemPalace + Rust/Holochain/Nix Image Pipeline
+// Base Developer Image (x86-64-v2) Pipeline
 //
-// Layer: udi-plus -> udi-plus-mem -> udi-plus-mem-rust-nix
-// Built from containers/udi-plus-mem-rust-nix/Dockerfile.
-// Terminal node — no downstream triggers.
+// Root of the v2 chain: base-developer-v2 -> udi-plus -> udi-plus-mem -> udi-plus-mem-rust-nix
+// Built from containers/base-developer-v2/Dockerfile (AlmaLinux 10, platform
+// linux/amd64/v2), for hosts without AVX2 (shem). See
+// docs/2026-10-01-x86-64-v2-workspace-image-plan.md.
+// Triggers devspaces-udi-plus (VARIANT=v2) downstream on successful publish.
+// No timer: the v2 chain is built on demand, never from the default cascade.
+// Tags are plain (latest/dated/git) in the base-developer-v2 repository, which
+// nothing else uses; the smoke on shem gates the v2-latest tags of the layers above.
 @Library('imagebuilder-shared') _
 
 pipeline {
@@ -13,8 +18,6 @@ pipeline {
     agent none
 
     parameters {
-        string(name: 'BASE_TAG', defaultValue: 'latest',
-               description: 'udi-plus-mem tag to build from (use dated tag after udi-plus-mem rebuild)')
         booleanParam(name: 'FORCE_BUILD', defaultValue: false,
                      description: 'Force rebuild')
         booleanParam(name: 'SKIP_PUSH', defaultValue: false,
@@ -23,8 +26,6 @@ pipeline {
                      description: 'Skip security scanning')
         booleanParam(name: 'SKIP_SMOKE_TESTS', defaultValue: false,
                      description: 'Skip smoke tests')
-        choice(name: 'VARIANT', choices: ['default', 'v2'],
-               description: 'default = the UBI10 chain on latest. v2 = the x86-64-v2 chain (runs on shem): tags are v2-prefixed, latest is never touched, and v2-latest moves only after the smoke on shem passes.')
     }
 
     stages {
@@ -98,21 +99,15 @@ pipeline {
                     steps {
                         container('builder') {
                             script {
-                                if (params.VARIANT == 'v2' && !params.BASE_TAG.startsWith('v2-')) {
-                                    error("VARIANT=v2 needs a v2- BASE_TAG (e.g. v2-latest), got '${params.BASE_TAG}'")
-                                }
-                                if (params.VARIANT != 'v2' && params.BASE_TAG.startsWith('v2-')) {
-                                    error("BASE_TAG '${params.BASE_TAG}' is a v2 tag; set VARIANT=v2")
-                                }
                                 def result = buildDevspaceImage(
-                                    imageName: 'udi-plus-mem-rust-nix',
-                                    dockerfile: 'containers/udi-plus-mem-rust-nix',
+                                    imageName: 'base-developer-v2',
+                                    dockerfile: 'containers/base-developer-v2',
                                     registry: 'harbor.ethosengine.com/devspaces',
-                                    baseImage: "harbor.ethosengine.com/devspaces/udi-plus-mem:${params.BASE_TAG}",
-                                    buildArgs: [BASE_TAG: params.BASE_TAG],
-                                    skipBaseImageCheck: true,  // controlled via BASE_TAG parameter
-                                    tagPrefix: params.VARIANT == 'v2' ? 'v2-' : '',
-                                    holdLatest: params.VARIANT == 'v2',
+                                    // MUST match the final stage's FROM in
+                                    // containers/base-developer-v2/Dockerfile. The upstream
+                                    // devfile base (copied from, never run) is not tracked
+                                    // here: use FORCE_BUILD to pick up upstream script changes.
+                                    baseImage: 'harbor.ethosengine.com/proxy-quay/almalinuxorg/almalinux:10',
                                     forceBuild: params.FORCE_BUILD,
                                     skipPush: params.SKIP_PUSH,
                                     skipSecurityScan: params.SKIP_SECURITY_SCAN,
@@ -131,11 +126,11 @@ pipeline {
                 always {
                     container('builder') {
                         script {
-                            def img = 'harbor.ethosengine.com/devspaces/udi-plus-mem-rust-nix'
+                            def img = 'harbor.ethosengine.com/devspaces/base-developer-v2'
                             if (env.IMAGE_TAG_DATED && env.IMAGE_TAG_GIT) {
                                 sh """
                                     set +e
-                                    nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_LATEST} 2>/dev/null || true
+                                    nerdctl -n k8s.io rmi ${img}:latest 2>/dev/null || true
                                     nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_DATED} 2>/dev/null || true
                                     nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_GIT} 2>/dev/null || true
                                 """
@@ -145,7 +140,7 @@ pipeline {
                 }
                 success {
                     script {
-                        echo "udi-plus-mem-rust-nix pipeline completed: ${env.BUILD_RESULT}"
+                        echo "base-developer-v2 pipeline completed: ${env.BUILD_RESULT}"
                         if (env.IMAGE_NAME) {
                             echo "Image: ${env.IMAGE_NAME}"
                         }
@@ -154,20 +149,14 @@ pipeline {
             }
         }
 
-        // v2 only: run the candidate on shem (x86-64-v2), then promote it.
-        // No agent here: the library opens its own pods.
-        stage('Smoke on shem') {
-            when {
-                expression { params.VARIANT == 'v2' && env.BUILD_RESULT == 'SUCCESS' && !params.SKIP_PUSH }
-            }
+        // No agent here: release the parent's BuildKit pod before waiting.
+        stage('Downstream') {
             steps {
                 script {
-                    smokeAndPromoteDevspaceImage(
-                        imageName: 'udi-plus-mem-rust-nix',
-                        candidateTag: env.IMAGE_TAG_GIT,
-                        promoteTag: env.IMAGE_TAG_LATEST,
-                        registry: 'harbor.ethosengine.com/devspaces'
-                    )
+                    if (env.BUILD_RESULT == 'SUCCESS' && !params.SKIP_PUSH) {
+                        echo 'base-developer-v2 updated - building the v2 chain from udi-plus'
+                        build job: '/devspaces-udi-plus/main', wait: true, parameters: [string(name: 'VARIANT', value: 'v2')]
+                    }
                 }
             }
         }

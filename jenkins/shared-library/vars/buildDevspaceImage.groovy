@@ -33,7 +33,15 @@
  *     // latest/dated/git (e.g. a named rollback anchor like 'hc-elohim-0.6.3').
  *     // Caller is responsible for sanitizing to valid OCI tag chars. Ignored
  *     // when skipPush is true (validation-only builds push nothing).
- *     extraTags: []
+ *     extraTags: [],
+ *     // Optional: variant isolation. tagPrefix 'v2-' publishes v2-latest /
+ *     // v2-<date> / v2-<git> instead of latest / <date> / <git>, so a variant
+ *     // can never move the default chain's tags (nor be pruned by its cleanup).
+ *     // holdLatest pushes only the dated and git tags (a CANDIDATE); the caller
+ *     // moves <prefix>latest later with smokeAndPromoteDevspaceImage once it has been
+ *     // smoke-tested. Both default to the historical behaviour.
+ *     tagPrefix: '',
+ *     holdLatest: false
  *   )
  */
 @NonCPS
@@ -58,13 +66,15 @@ def call(Map config) {
     def skipSmokeTests = config.skipSmokeTests ?: false
     def forceBuild = config.forceBuild ?: false
     def extraTags = config.extraTags ?: []
+    def tagPrefix = config.tagPrefix ?: ''
+    def holdLatest = config.holdLatest ?: false
 
     def datestamp = sh(script: 'date +%Y-%m-%d', returnStdout: true).trim()
     def gitHash = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
 
-    def imageTagLatest = 'latest'
-    def imageTagDated = datestamp
-    def imageTagGit = gitHash
+    def imageTagLatest = "${tagPrefix}latest".toString()
+    def imageTagDated = "${tagPrefix}${datestamp}".toString()
+    def imageTagGit = "${tagPrefix}${gitHash}".toString()
 
     def imageTags = [
         latest: imageTagLatest,
@@ -153,7 +163,8 @@ def call(Map config) {
         // Push directly from BuildKit → Harbor. Multi-name output writes
         // all tags (latest, dated, git-hash, + any caller-supplied extraTags —
         // e.g. a rolling named rollback anchor) to the same digest in one push.
-        def outputNames = ([imageTagLatest, imageTagDated, imageTagGit] + extraTags).collect {
+        def pushedTags = (holdLatest ? [] : [imageTagLatest]) + [imageTagDated, imageTagGit] + extraTags
+        def outputNames = pushedTags.collect {
             "${registry}/${config.imageName}:${it}"
         }.join(',')
         def outputArg = "type=image,\"name=${outputNames}\",push=true"
@@ -295,7 +306,8 @@ EOF
                             tags.add(n.toString())
                         }
                     }
-                    def datedTag = tags.find { it ==~ /\d{4}-\d{2}-\d{2}/ }
+                    def datedPattern = tagPrefix + '\\d{4}-\\d{2}-\\d{2}'
+                    def datedTag = tags.find { it ==~ datedPattern }
                     if (datedTag) {
                         datedArtifacts.add([
                             digest: artifact.digest,
@@ -315,8 +327,8 @@ EOF
 
                     for (old in toDelete) {
                         // Skip if this artifact also carries the 'latest' tag
-                        if (old.tags.contains('latest')) {
-                            echo "Skipping ${old.datedTag} (also tagged as latest)"
+                        if (old.tags.contains(imageTagLatest)) {
+                            echo "Skipping ${old.datedTag} (also tagged as ${imageTagLatest})"
                             continue
                         }
                         echo "Deleting old artifact: ${old.tags.join(', ')} (digest: ${old.digest})"

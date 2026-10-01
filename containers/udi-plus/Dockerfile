@@ -11,7 +11,14 @@
 #   - Cloud tools: kubectl, helm, terraform, oc, docker-compose
 #   - Build tools: Maven, Gradle
 # We install what we need below.
-FROM harbor.ethosengine.com/proxy-quay/devfile/base-developer-image:ubi10-latest
+#
+# BASE_IMAGE lets the x86-64-v2 variant swap in containers/base-developer-v2
+# (see docs/2026-10-01-x86-64-v2-workspace-image-plan.md). The default is the
+# upstream UBI10 base, so a build without --build-arg is unchanged. The default
+# MUST equal the default-variant baseImage in jenkins/Jenkinsfile-udi-plus.
+ARG BASE_IMAGE=harbor.ethosengine.com/proxy-quay/devfile/base-developer-image:ubi10-latest
+# hadolint ignore=DL3006
+FROM ${BASE_IMAGE}
 
 USER root
 

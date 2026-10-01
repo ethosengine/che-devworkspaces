@@ -4,7 +4,7 @@ This guide explains how to set up the individual image build pipelines in Jenkin
 
 ## Overview
 
-The monolithic `Jenkinsfile-devspaces-images` has been split into 7 separate pipelines:
+The monolithic `Jenkinsfile-devspaces-images` has been split into separate pipelines:
 
 1. **devspaces-ci-builder** - CI builder image (foundational)
 2. **devspaces-udi-plus** - Base UDI image (triggers downstream builds)
@@ -13,6 +13,7 @@ The monolithic `Jenkinsfile-devspaces-images` has been split into 7 separate pip
 5. **devspaces-udi-plus-gae** - Google App Engine image
 6. **devspaces-udi-plus-mem** - UDI + MemPalace semantic memory (triggers udi-plus-mem-rust-nix)
 7. **devspaces-udi-plus-mem-rust-nix** - UDI + MemPalace + Rust/Holochain/Nix
+8. **devspaces-base-developer-v2** - x86-64-v2 base image (AlmaLinux 10) for hosts without AVX2 (shem); root of the `VARIANT=v2` chain
 
 ## Shared Library Setup
 
@@ -125,6 +126,20 @@ Navigate to Jenkins → **New Item** for each of the following:
   - **Script Path**: `jenkins/Jenkinsfile-udi-plus-mem-rust-nix`
   - **Branch**: `*/main`
 
+#### devspaces-base-developer-v2
+
+Create this job by hand (Jenkins does not create it from the repository), the same
+way as the others, before the first v2 build.
+
+- **Name**: `devspaces-base-developer-v2`
+- **Type**: Pipeline (the cascades call it as `/devspaces-base-developer-v2/main`, so create it in the same multibranch form as its siblings)
+- **Pipeline Definition**: Pipeline script from SCM
+  - **SCM**: Git
+  - **Repository URL**: `https://github.com/ethosengine/che-devworkspaces.git`
+  - **Script Path**: `jenkins/Jenkinsfile-base-developer-v2`
+  - **Branch**: `*/main`
+- **Build Triggers**: none. The v2 chain is built on demand and is never part of the default cascade.
+
 ### 2. Configure Credentials
 
 Ensure the following credentials are configured in Jenkins:
@@ -174,6 +189,41 @@ The absolute paths name concrete multibranch `main` jobs. With `wait: true`,
 targeting only the parent folder fails with `Waiting for non-job items is not
 supported` instead of scheduling a build.
 
+### The x86-64-v2 chain (`VARIANT=v2`)
+
+shem's CPUs have no AVX2, and the UBI 10 userland requires x86-64-v3, so the default
+images cannot start there. The v2 chain is the same three Dockerfiles on an
+AlmaLinux 10 x86-64-v2 base. See `docs/2026-10-01-x86-64-v2-workspace-image-plan.md`.
+
+```text
+devspaces-base-developer-v2                  (containers/base-developer-v2)
+  -> devspaces-udi-plus          VARIANT=v2  (BASE_IMAGE=devspaces/base-developer-v2:latest)
+    -> devspaces-udi-plus-mem          VARIANT=v2 BASE_TAG=v2-latest
+      -> devspaces-udi-plus-mem-rust-nix   VARIANT=v2 BASE_TAG=v2-latest
+```
+
+Run `devspaces-base-developer-v2`; it cascades through the rest with the right
+parameters. To build one layer alone, set `VARIANT=v2` (and, below `udi-plus`,
+`BASE_TAG=v2-latest` or a `v2-` dated tag; a mismatched `VARIANT`/`BASE_TAG` pair
+fails the build).
+
+With `VARIANT=v2`:
+
+- Tags are `v2-latest`, `v2-<date>`, `v2-<git>`. The default `latest`, `<date>` and
+  `<git>` tags are never pushed, moved or pruned (Harbor cleanup matches each
+  chain's dated tags separately).
+- The build pushes only the `v2-<date>` and `v2-<git>` tags (a candidate).
+  `Smoke on shem` then runs `containers/smoke/v2-smoke.sh` in a pod pinned to shem
+  (`kubernetes.io/hostname: shem`, toleration `remote-wan=true:NoSchedule`) inside
+  the candidate. Only if it passes does `smokeAndPromoteDevspaceImage` add the
+  `v2-latest` tag through the Harbor API (a retag, no rebuild). A failed smoke fails
+  the build, leaves `v2-latest` where it was and stops the cascade.
+- The `udi-plus` cascade runs only `udi-plus-mem` (and from it `udi-plus-mem-rust-nix`):
+  `rust-nix-dev` and `udi-plus-angular` build on the default chain and are not part of v2.
+- Requirements on the cluster: the Jenkins agent image must itself run on x86-64-v2
+  (the pod's agent container lands on shem too), and the `harbor-robot-registry`
+  credential must be allowed to create tags.
+
 ### Manual Builds
 
 To build an individual image:
@@ -183,6 +233,7 @@ To build an individual image:
 3. Configure options:
    - **FORCE_BUILD**: Force rebuild even if base image hasn't changed
    - **BASE_TAG** (for derived images): Specify which udi-plus tag to build from
+   - **VARIANT** (udi-plus and its derived images): `default` (UBI10, `latest`) or `v2` (x86-64-v2, `v2-latest`, smoke on shem); see above
    - **SKIP_PUSH**: Test builds without pushing to registry
    - **SKIP_SECURITY_SCAN**: Skip Harbor security scanning
    - **SKIP_SMOKE_TESTS**: Skip smoke tests

@@ -23,6 +23,8 @@ pipeline {
                      description: 'Skip security scanning')
         booleanParam(name: 'SKIP_SMOKE_TESTS', defaultValue: false,
                      description: 'Skip smoke tests')
+        choice(name: 'VARIANT', choices: ['default', 'v2'],
+               description: 'default = the UBI10 chain on latest. v2 = the x86-64-v2 chain (runs on shem): tags are v2-prefixed, latest is never touched, and v2-latest moves only after the smoke on shem passes.')
     }
 
     stages {
@@ -96,6 +98,12 @@ pipeline {
                     steps {
                         container('builder') {
                             script {
+                                if (params.VARIANT == 'v2' && !params.BASE_TAG.startsWith('v2-')) {
+                                    error("VARIANT=v2 needs a v2- BASE_TAG (e.g. v2-latest), got '${params.BASE_TAG}'")
+                                }
+                                if (params.VARIANT != 'v2' && params.BASE_TAG.startsWith('v2-')) {
+                                    error("BASE_TAG '${params.BASE_TAG}' is a v2 tag; set VARIANT=v2")
+                                }
                                 def result = buildDevspaceImage(
                                     imageName: 'udi-plus-mem',
                                     dockerfile: 'containers/udi-plus-mem',
@@ -103,6 +111,8 @@ pipeline {
                                     baseImage: "harbor.ethosengine.com/devspaces/udi-plus:${params.BASE_TAG}",
                                     buildArgs: [BASE_TAG: params.BASE_TAG],
                                     skipBaseImageCheck: true,  // controlled via BASE_TAG parameter
+                                    tagPrefix: params.VARIANT == 'v2' ? 'v2-' : '',
+                                    holdLatest: params.VARIANT == 'v2',
                                     forceBuild: params.FORCE_BUILD,
                                     skipPush: params.SKIP_PUSH,
                                     skipSecurityScan: params.SKIP_SECURITY_SCAN,
@@ -126,7 +136,7 @@ pipeline {
                             if (env.IMAGE_TAG_DATED && env.IMAGE_TAG_GIT) {
                                 sh """
                                     set +e
-                                    nerdctl -n k8s.io rmi ${img}:latest 2>/dev/null || true
+                                    nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_LATEST} 2>/dev/null || true
                                     nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_DATED} 2>/dev/null || true
                                     nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_GIT} 2>/dev/null || true
                                 """
@@ -145,6 +155,24 @@ pipeline {
             }
         }
 
+        // v2 only: run the candidate on shem (x86-64-v2), then promote it.
+        // No agent here: the library opens its own pods.
+        stage('Smoke on shem') {
+            when {
+                expression { params.VARIANT == 'v2' && env.BUILD_RESULT == 'SUCCESS' && !params.SKIP_PUSH }
+            }
+            steps {
+                script {
+                    smokeAndPromoteDevspaceImage(
+                        imageName: 'udi-plus-mem',
+                        candidateTag: env.IMAGE_TAG_GIT,
+                        promoteTag: env.IMAGE_TAG_LATEST,
+                        registry: 'harbor.ethosengine.com/devspaces'
+                    )
+                }
+            }
+        }
+
         // No agent here: release the parent's BuildKit pod before waiting.
         stage('Downstream') {
             steps {
@@ -152,7 +180,11 @@ pipeline {
                     // Trigger downstream mem-rust-nix build if mem was updated.
                     if (env.BUILD_RESULT == 'SUCCESS' && !params.SKIP_PUSH) {
                         echo 'udi-plus-mem updated - building downstream udi-plus-mem-rust-nix'
-                        build job: '/devspaces-udi-plus-mem-rust-nix/main', wait: true
+                        if (params.VARIANT == 'v2') {
+                            build job: '/devspaces-udi-plus-mem-rust-nix/main', wait: true, parameters: [string(name: 'VARIANT', value: 'v2'), string(name: 'BASE_TAG', value: 'v2-latest')]
+                        } else {
+                            build job: '/devspaces-udi-plus-mem-rust-nix/main', wait: true
+                        }
                     }
                 }
             }

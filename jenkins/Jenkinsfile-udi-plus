@@ -18,6 +18,8 @@ pipeline {
                      description: 'Skip security scanning')
         booleanParam(name: 'SKIP_SMOKE_TESTS', defaultValue: false,
                      description: 'Skip smoke tests')
+        choice(name: 'VARIANT', choices: ['default', 'v2'],
+               description: 'default = the UBI10 chain on latest. v2 = the x86-64-v2 chain (runs on shem): tags are v2-prefixed, latest is never touched, and v2-latest moves only after the smoke on shem passes.')
     }
 
     triggers {
@@ -97,6 +99,7 @@ pipeline {
                         container('builder') {
                             script {
                                 def img = 'harbor.ethosengine.com/devspaces/udi-plus'
+                                def tagLatest = params.VARIANT == 'v2' ? 'v2-latest' : 'latest'
                                 echo '═══════════════════════════════════════════'
                                 echo '           VERSION REPORT'
                                 echo '═══════════════════════════════════════════'
@@ -104,10 +107,10 @@ pipeline {
                                 // Capture versions from current latest image
                                 def previousVersions = ''
                                 try {
-                                    sh "nerdctl -n k8s.io pull ${img}:latest 2>/dev/null || true"
+                                    sh "nerdctl -n k8s.io pull ${img}:${tagLatest} 2>/dev/null || true"
                                     previousVersions = sh(
                                         script: """
-                                            nerdctl -n k8s.io run --rm ${img}:latest bash -c '
+                                            nerdctl -n k8s.io run --rm ${img}:${tagLatest} bash -c '
                                                 echo "=== PREVIOUS IMAGE VERSIONS ==="
                                                 echo "Claude: \$(claude --version 2>/dev/null || echo N/A)"
                                                 echo "Antigravity: \$(agy --version 2>/dev/null || echo N/A)"
@@ -159,7 +162,16 @@ pipeline {
                                     // this Dockerfile deliberately moved OFF of (see
                                     // its header: base/ubi10 was chosen because
                                     // ubi10-latest only exists for base).
-                                    baseImage: 'harbor.ethosengine.com/proxy-quay/devfile/base-developer-image:ubi10-latest',
+                                    baseImage: params.VARIANT == 'v2'
+                                        ? 'harbor.ethosengine.com/devspaces/base-developer-v2:latest'
+                                        : 'harbor.ethosengine.com/proxy-quay/devfile/base-developer-image:ubi10-latest',
+                                    // v2 swaps the Dockerfile's FROM through its BASE_IMAGE
+                                    // arg; the default build passes nothing, as before.
+                                    buildArgs: params.VARIANT == 'v2'
+                                        ? [BASE_IMAGE: 'harbor.ethosengine.com/devspaces/base-developer-v2:latest']
+                                        : [:],
+                                    tagPrefix: params.VARIANT == 'v2' ? 'v2-' : '',
+                                    holdLatest: params.VARIANT == 'v2',
                                     forceBuild: params.FORCE_BUILD,
                                     skipPush: params.SKIP_PUSH,
                                     skipSecurityScan: params.SKIP_SECURITY_SCAN,
@@ -183,7 +195,7 @@ pipeline {
                             if (env.IMAGE_TAG_DATED && env.IMAGE_TAG_GIT) {
                                 sh """
                                     set +e
-                                    nerdctl -n k8s.io rmi ${img}:latest 2>/dev/null || true
+                                    nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_LATEST} 2>/dev/null || true
                                     nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_DATED} 2>/dev/null || true
                                     nerdctl -n k8s.io rmi ${img}:${IMAGE_TAG_GIT} 2>/dev/null || true
                                 """
@@ -242,6 +254,24 @@ pipeline {
             }
         }
 
+        // v2 only: run the candidate on shem (x86-64-v2), then promote it.
+        // No agent here: the library opens its own pods.
+        stage('Smoke on shem') {
+            when {
+                expression { params.VARIANT == 'v2' && env.BUILD_RESULT == 'SUCCESS' && !params.SKIP_PUSH }
+            }
+            steps {
+                script {
+                    smokeAndPromoteDevspaceImage(
+                        imageName: 'udi-plus',
+                        candidateTag: env.IMAGE_TAG_GIT,
+                        promoteTag: env.IMAGE_TAG_LATEST,
+                        registry: 'harbor.ethosengine.com/devspaces'
+                    )
+                }
+            }
+        }
+
         // No agent here: release the parent's BuildKit pod before waiting.
         stage('Downstream') {
             steps {
@@ -255,10 +285,17 @@ pipeline {
                     // 2026-07-12, triggered from here). Build it by hand
                     // if the GAE/Python 2.7 image is ever needed again.
                     if (env.BUILD_RESULT == 'SUCCESS' && !params.SKIP_PUSH) {
-                        echo 'udi-plus updated - building downstream images sequentially'
-                        build job: '/devspaces-rust-nix-dev/main', wait: true
-                        build job: '/devspaces-udi-plus-angular/main', wait: true
-                        build job: '/devspaces-udi-plus-mem/main', wait: true
+                        if (params.VARIANT == 'v2') {
+                            // The v2 chain is udi-plus -> mem -> mem-rust-nix only.
+                            // rust-nix-dev and angular build FROM the default chain.
+                            echo 'udi-plus v2 updated - building udi-plus-mem v2'
+                            build job: '/devspaces-udi-plus-mem/main', wait: true, parameters: [string(name: 'VARIANT', value: 'v2'), string(name: 'BASE_TAG', value: 'v2-latest')]
+                        } else {
+                            echo 'udi-plus updated - building downstream images sequentially'
+                            build job: '/devspaces-rust-nix-dev/main', wait: true
+                            build job: '/devspaces-udi-plus-angular/main', wait: true
+                            build job: '/devspaces-udi-plus-mem/main', wait: true
+                        }
                     }
                 }
             }

@@ -53,6 +53,10 @@ podman push harbor.ethosengine.com/devspaces/udi-plus:latest
 - Shared library: `jenkins/shared-library/vars/buildDevspaceImage.groovy`
 - Each build creates 3 tags: `latest`, `<datestamp>`, `<git-hash>`
 - Successful `udi-plus` builds trigger downstream image builds
+- `VARIANT=v2` (udi-plus, udi-plus-mem, udi-plus-mem-rust-nix) builds the x86-64-v2 chain for
+  shem from `containers/base-developer-v2`: `v2-latest`/`v2-<datestamp>`/`v2-<git-hash>` tags,
+  never `latest`; `v2-latest` moves only after `containers/smoke/v2-smoke.sh` passes on shem.
+  Start it from `devspaces-base-developer-v2`. See `docs/2026-10-01-x86-64-v2-workspace-image-plan.md`.
 
 See `jenkins/JENKINS_SETUP.md` for complete pipeline setup instructions.
 
