@@ -42,9 +42,12 @@ def call(Map config) {
     def image = "${registry}/${config.imageName}:${config.candidateTag}"
 
     // ------------------------------------------------------------------
-    // Smoke on shem. fsGroup lets the image's user (10001) write the
-    // workspace volume the agent container created, which the durable
-    // `sh` step needs.
+    // Smoke on shem. The durable `sh` step writes its log and result files
+    // into a directory the jnlp container (uid 1000) created with mode 0755,
+    // so fsGroup alone is not enough: as the image's own user (10001) the
+    // step dies with "process apparently never started". The smoke container
+    // therefore runs as the agent's uid, with gid 0 so the image's
+    // group-writable home still works, the same shape as Che's arbitrary UID.
     // ------------------------------------------------------------------
     echo "=== Smoke ${image} on shem ==="
     podTemplate(cloud: 'kubernetes', yaml: """
@@ -67,6 +70,9 @@ spec:
       command:
         - cat
       tty: true
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 0
 """) {
         node(POD_LABEL) {
             checkout scm
