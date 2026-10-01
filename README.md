@@ -73,6 +73,14 @@ All images provide instant, reproducible development environments for various pr
 
 ## Choosing the host for a new Elohim workspace
 
+> **shem cannot run the current dev image.** A workspace launched there on
+> 2026-10-01 failed with `Fatal glibc error: CPU does not support x86-64-v3`:
+> shem's Sandy Bridge Xeons are x86-64-v2 and the image is built on UBI 10.
+> Placement and storage below worked; the image is the blocker. The plan for
+> images that run there is
+> [docs/2026-10-01-x86-64-v2-workspace-image-plan.md](docs/2026-10-01-x86-64-v2-workspace-image-plan.md).
+> Do not open the shem launch link until that plan's step 7.
+
 As of 2026-09-30, ordinary Che workspaces use a separate `openebs-hostpath`
 PVC per workspace on the LAN. To establish another large Elohim workspace on
 **shem**, select both the node and `shem-zfs` storage before its first start.
