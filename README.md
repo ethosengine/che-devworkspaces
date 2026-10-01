@@ -92,8 +92,15 @@ attributes:
     namespace: eclipse-che
   pod-overrides:
     spec:
-      nodeSelector:
-        kubernetes.io/hostname: shem
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - shem
       tolerations:
         - key: remote-wan
           operator: Equal
@@ -103,11 +110,23 @@ attributes:
         fsGroupChangePolicy: OnRootMismatch
 ```
 
-The selector requires shem; the toleration permits scheduling through its WAN
-taint. If shem is unavailable or lacks resources, this workspace waits rather
+Placement is node affinity, not `nodeSelector`: the CheCluster's
+`devEnvironments.nodeSelector` (`node-type=performance` as of 2026-10-01)
+replaces any `nodeSelector` a devfile sets. A test workspace with a
+`hostname=shem` selector came out with `node-type=performance` only and
+scheduled on ethosengine. Affinity survives but is ANDed with that selector, so
+**the shem variant stays Pending until the CheCluster selector admits shem**,
+for example a `che-workspaces=true` label on both nodes with the CheCluster
+pointed at it. Changing that selector alters every workspace's pod template,
+so running workspaces restart at the operator's next reconcile; schedule it.
+Do not relabel shem as `performance`: the zfs controller's anti-affinity keys
+on `node-type=remote`.
+
+The affinity requires shem; the toleration permits scheduling through its WAN
+taint, and ordinary workspaces lack it, so they stay on the LAN node. If shem is unavailable or lacks resources, this workspace waits rather
 than falling back to a LAN node. With a new `shem-zfs` claim, first-consumer
 binding establishes the volume on shem and its PV affinity keeps it there.
-For an ethosengine variant, use `kubernetes.io/hostname: ethosengine`, omit the
+For an ethosengine variant, use the value `ethosengine`, omit the
 remote toleration, and retain the normal Che storage configuration.
 
 ### Storage configuration prerequisite (operator-owned)
